@@ -39,18 +39,29 @@ class DEMToSTL(object):
         a 1 m-resolution km-scale DEM first would waste hundreds of MB of RAM
         on triangles that are far smaller than any printer can resolve.
     5.  Load the resampled array into NumPy; delete the temp raster.
-    6.  Fill / mark NoData cells according to user choice.
+    6.  Establish the Z floor (minimum elevation or sea level). In Rectangular
+        mode fill NoData cells with the floor value. In Tight mode keep NoData
+        as NaN so the boundary can be traced.
     7.  Build a watertight triangle mesh:
-            · Terrain surface  — 2 triangles per quad (CCW, +Z normal, verified)
-            · South wall       — 2 triangles per column strip (-Y normal, verified)
-            · North wall       — 2 triangles per column strip (+Y normal, verified)
-            · West wall        — 2 triangles per row strip    (-X normal, verified)
-            · East wall        — 2 triangles per row strip    (+X normal, verified)
-            · Bottom face      — 2 triangles                  (-Z normal, verified)
+            · Terrain surface  — 2 triangles per valid quad (+Z normal)
+            · Boundary walls   — 2 triangles per boundary edge, all 4 directions
+                                 (each wall faces outward from the valid data)
+            · Bottom face      — 2 triangles per valid quad (-Z normal, reversed
+                                 winding vs. terrain; exactly mirrors the terrain
+                                 footprint so every wall-bottom edge is shared)
     8.  Compute per-triangle normals via cross product (float64 precision).
     9.  Write a binary STL in 100 K-triangle chunks using a vectorised
         byte-interleaving trick to insert the 2-byte attribute field without a
         Python loop.
+
+    Footprint modes
+    ---------------
+    Rectangular : NoData cells are filled with the floor elevation. The model
+                  has a flat rectangular base and four straight perimeter walls.
+    Tight       : NoData cells (always at the raster edge, never interior) are
+                  treated as void. Walls follow the irregular data boundary,
+                  hugging the actual DEM outline. Produces a smaller, more
+                  printable model for non-rectangular survey areas.
 
     Coordinate system (model space, mm)
     ------------------------------------
@@ -133,23 +144,37 @@ class DEMToSTL(object):
         )
         p5.value = 3.0
 
-        # 6 — NoData handling
+        # 6 — Z floor (vertical reference for the base of the model)
         p6 = arcpy.Parameter(
-            displayName="NoData Handling",
-            name="nodata_handling",
+            displayName="Z Floor Reference",
+            name="z_floor",
             datatype="GPString",
             parameterType="Required",
             direction="Input",
         )
         p6.filter.type = "ValueList"
         p6.filter.list = [
-            "Set to Minimum Elevation",
-            "Set to Sea Level (0)",
-            "Leave as Void (open mesh)",
+            "Minimum Elevation",
+            "Sea Level (0)",
         ]
-        p6.value = "Set to Minimum Elevation"
+        p6.value = "Minimum Elevation"
 
-        return [p0, p1, p2, p3, p4, p5, p6]
+        # 7 — Model footprint (rectangular vs. tight boundary)
+        p7 = arcpy.Parameter(
+            displayName="Model Footprint",
+            name="model_footprint",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input",
+        )
+        p7.filter.type = "ValueList"
+        p7.filter.list = [
+            "Rectangular",
+            "Tight (Follows DEM Boundary)",
+        ]
+        p7.value = "Rectangular"
+
+        return [p0, p1, p2, p3, p4, p5, p6, p7]
 
     # ------------------------------------------------------------------
     def isLicensed(self):
@@ -184,13 +209,16 @@ class DEMToSTL(object):
     # ------------------------------------------------------------------
     def execute(self, parameters, messages):
 
-        in_dem      = parameters[0].valueAsText
-        out_stl     = parameters[1].valueAsText
-        max_bed     = float(parameters[2].value)
-        vert_exag   = float(parameters[3].value)
-        min_detail  = float(parameters[4].value)
-        base_thick  = float(parameters[5].value)
-        nodata_mode = parameters[6].valueAsText
+        in_dem          = parameters[0].valueAsText
+        out_stl         = parameters[1].valueAsText
+        max_bed         = float(parameters[2].value)
+        vert_exag       = float(parameters[3].value)
+        min_detail      = float(parameters[4].value)
+        base_thick      = float(parameters[5].value)
+        z_floor_mode    = parameters[6].valueAsText
+        footprint_mode  = parameters[7].valueAsText
+
+        tight = (footprint_mode == "Tight (Follows DEM Boundary)")
 
         if not out_stl.lower().endswith(".stl"):
             out_stl += ".stl"
@@ -285,36 +313,31 @@ class DEMToSTL(object):
         cell_mm_h  = model_h_mm / (nr - 1)
         messages.addMessage(f"  Cell spacing : {cell_mm_w:.3f} x {cell_mm_h:.3f} mm")
 
-        # ── Step 5 / 8 — NoData handling and Z array ─────────────────────────
+        # ── Step 5 / 8 — Z floor and elevation array ─────────────────────────
         messages.addMessage("Step 5/8 — Processing elevation values...")
-        nan_mask = np.isnan(arr)
-        elev_min_raw = float(np.nanmin(arr))   # original map-unit values
-        elev_max_raw = float(np.nanmax(arr))   # before any NoData fill
+        nan_mask     = np.isnan(arr)
+        elev_min_raw = float(np.nanmin(arr))
+        elev_max_raw = float(np.nanmax(arr))
 
-        if nodata_mode == "Set to Minimum Elevation":
+        if z_floor_mode == "Sea Level (0)":
+            z_ref = min(elev_min_raw, 0.0)   # sea level maps to base_thick
+        else:  # "Minimum Elevation"
+            z_ref = elev_min_raw
+
+        if not tight:
+            # Rectangular: fill NoData with the floor value so every cell is valid
             if nan_mask.any():
-                arr[nan_mask] = np.nanmin(arr)
-            z_ref = arr.min()
+                arr[nan_mask] = z_ref
 
-        elif nodata_mode == "Set to Sea Level (0)":
-            if nan_mask.any():
-                arr[nan_mask] = 0.0
-            z_ref = min(np.nanmin(arr), 0.0)   # floor at 0 so sea level maps to base
-
-        else:  # "Leave as Void (open mesh)"
-            z_ref = np.nanmin(arr)
-
-        # Convert to mm above the print plate.
-        # z=0  → bottom face (print plate contact)
-        # z=base_thick → lowest terrain point
-        # z=base_thick + relief_mm → highest terrain point
+        # Convert elevations to mm above the print plate.
+        # z=0          → bottom face (print plate contact)
+        # z=base_thick → floor elevation (minimum terrain or sea level)
+        # z=base_thick + relief_mm → terrain peaks
+        # NaN cells survive the linear transform as NaN (tight mode only).
         z_mm = (arr - z_ref) * xy_scale * vert_exag + base_thick
 
-        if nodata_mode == "Leave as Void (open mesh)":
-            z_mm[nan_mask] = np.nan   # holes remain open; walls seal the perimeter
-
-        relief_mm  = float(np.nanmax(z_mm)) - base_thick
-        total_z_mm = float(np.nanmax(z_mm))
+        relief_mm      = float(np.nanmax(z_mm)) - base_thick
+        total_z_mm     = float(np.nanmax(z_mm))
         elev_range_raw = elev_max_raw - elev_min_raw
         messages.addMessage(f"  Elev range     : {elev_min_raw:.2f} – {elev_max_raw:.2f}  (Δ{elev_range_raw:.2f} map units)")
         messages.addMessage(f"  Terrain relief : {relief_mm:.2f} mm  (x{vert_exag:.2f} exag)")
@@ -323,162 +346,142 @@ class DEMToSTL(object):
         # ── Step 6 / 8 — Build triangle mesh ─────────────────────────────────
         messages.addMessage("Step 6/8 — Building watertight triangle mesh...")
 
-        # Model-space vertex coordinates for the whole grid
-        #   X[j] = j x cell_mm_w           (west = 0)
-        #   Y[i] = (nr-1-i) x cell_mm_h    (row 0 = north = max Y; row nr-1 = south = 0)
+        # Model-space vertex coordinates
+        #   X[j] = j × cell_mm_w           (west = 0)
+        #   Y[i] = (nr-1-i) × cell_mm_h    (row 0 = north = max Y; row nr-1 = south = 0)
         cols_x = np.arange(nc, dtype=np.float64) * cell_mm_w
         rows_y = (nr - 1 - np.arange(nr, dtype=np.float64)) * cell_mm_h
 
         X_grid, Y_grid = np.meshgrid(cols_x, rows_y)   # (nr, nc)
-        Z_grid = z_mm                                  # (nr, nc), NaN for voids
+        Z_grid = z_mm                                   # (nr, nc); NaN in tight mode
 
-        Xmax = (nc - 1) * cell_mm_w
-        Ymax = (nr - 1) * cell_mm_h
+        # valid_cell[i,j] = True iff all 4 corners of quad (i,j) are non-NaN.
+        # Rectangular mode: all-True (NoData filled above).
+        # Tight mode: True only where the DEM has data on all four corners.
+        valid_cell = (
+            ~np.isnan(Z_grid[:-1, :-1]) &
+            ~np.isnan(Z_grid[:-1, 1:])  &
+            ~np.isnan(Z_grid[1:,  :-1]) &
+            ~np.isnan(Z_grid[1:,  1:])
+        )
+
+        if not valid_cell.any():
+            raise RuntimeError(
+                "No valid terrain quads found after resampling. "
+                "Check the input DEM for NoData coverage."
+            )
 
         all_v0, all_v1, all_v2 = [], [], []
 
+        # Flat integer index arrays for all valid quads — used by terrain and bottom.
+        ii, jj = np.where(valid_cell)   # quad row, quad col
+
+        def _gv(ri, ci):
+            """Vertex array (N,3) from grid row indices ri and col indices ci."""
+            return np.stack([X_grid[ri, ci], Y_grid[ri, ci], Z_grid[ri, ci]], axis=1)
+
         # ── 6a. Terrain surface ──────────────────────────────────────────────
-        # For each quad (i,j) the four corners are:
-        #   A = (i,   j  )  NW — larger Y, smaller X
-        #   B = (i,   j+1)  NE — larger Y, larger X
-        #   C = (i+1, j+1)  SE — smaller Y, larger X
-        #   D = (i+1, j  )  SW — smaller Y, smaller X
+        # Quad corners for quad (i,j):
+        #   A = (i,   j  )  NW    B = (i,   j+1)  NE
+        #   D = (i+1, j  )  SW    C = (i+1, j+1)  SE
         #
-        # Winding (CCW from above → outward normal +Z, verified):
-        #   Tri1: A, D, C   (NW → SW → SE)
-        #   Tri2: A, C, B   (NW → SE → NE)
-        #
-        # Cross-product verification (Tri1):
-        #   e1 = D-A = (0, -ch, zD-zA);  e2 = C-A = (cw, -ch, zC-zA)
-        #   n_z = cw·ch > 0  ✓
-        # Cross-product verification (Tri2):
-        #   e1 = C-A = (cw, -ch, zC-zA);  e2 = B-A = (cw, 0, zB-zA)
-        #   n_z = cw·ch > 0  ✓
+        # Winding (CCW from above → outward +Z normal):
+        #   Tri1: A, D, C   (NW→SW→SE)   n_z = cw·ch > 0 ✓
+        #   Tri2: A, C, B   (NW→SE→NE)   n_z = cw·ch > 0 ✓
 
-        ri0, ri1 = slice(None, nr - 1), slice(1, None)
-        ci0, ci1 = slice(None, nc - 1), slice(1, None)
+        A = _gv(ii,     jj)
+        B = _gv(ii,     jj + 1)
+        C = _gv(ii + 1, jj + 1)
+        D = _gv(ii + 1, jj)
 
-        def _v(rs, cs):
-            """Return (N, 3) float64 array of vertex positions for a grid slice."""
-            return np.stack(
-                [X_grid[rs, cs].ravel(), Y_grid[rs, cs].ravel(), Z_grid[rs, cs].ravel()],
-                axis=1,
-            )
-
-        A = _v(ri0, ci0)
-        B = _v(ri0, ci1)
-        C = _v(ri1, ci1)
-        D = _v(ri1, ci0)
-
-        if nodata_mode == "Leave as Void (open mesh)":
-            ok1 = ~(np.isnan(A[:, 2]) | np.isnan(D[:, 2]) | np.isnan(C[:, 2]))
-            ok2 = ~(np.isnan(A[:, 2]) | np.isnan(C[:, 2]) | np.isnan(B[:, 2]))
-            all_v0 += [A[ok1], A[ok2]]
-            all_v1 += [D[ok1], C[ok2]]
-            all_v2 += [C[ok1], B[ok2]]
-        else:
-            all_v0 += [A, A]
-            all_v1 += [D, C]
-            all_v2 += [C, B]
-
+        all_v0 += [A, A]
+        all_v1 += [D, C]
+        all_v2 += [C, B]
         del A, B, C, D
 
-        # Helper — replace NaN edge elevations with base_thick so walls close
-        def _safe(z_arr):
-            v = z_arr.copy()
-            v[np.isnan(v)] = base_thick
-            return v
-
-        # Shared column strip index arrays (length nc-1)
-        j_idx = np.arange(nc - 1, dtype=np.float64)
-        sx    = j_idx * cell_mm_w           # west X of each column strip
-        sx1   = (j_idx + 1) * cell_mm_w     # east X
-
-        # Shared row strip Y arrays (length nr-1)
-        i_idx = np.arange(nr - 1, dtype=np.float64)
-        Yi    = (nr - 1 - i_idx) * cell_mm_h   # north Y of each row strip
-        Yi1   = (nr - 2 - i_idx) * cell_mm_h   # south Y
-
-        # ── 6b. South wall — row nr-1, Y=0, outward normal -Y ────────────────
-        # Quad per column strip (viewed from south, looking +Y):
-        #   TL=(j·cw,  0, Zj)   TR=((j+1)·cw, 0, Zj+1)
-        #   BL=(j·cw,  0, 0 )   BR=((j+1)·cw, 0, 0   )
+        # ── 6b–6e. Boundary walls ────────────────────────────────────────────
+        # A wall is emitted on each face of a valid quad that borders an invalid
+        # or absent quad. In rectangular mode (all quads valid) this produces
+        # exactly the four perimeter walls. In tight mode it traces the
+        # irregular DEM boundary.
         #
-        # Tri1: TL, BL, BR  →  n=(0, -Zj·cw, 0) → -Y ✓
-        # Tri2: TL, BR, TR  →  n=(0, -Zj+1·cw, 0) → -Y ✓
+        # Neighbour masks (False where no neighbour exists → border ⟹ wall needed)
+        above = np.zeros_like(valid_cell); above[1:,  :] = valid_cell[:-1, :]
+        below = np.zeros_like(valid_cell); below[:-1, :] = valid_cell[1:,  :]
+        left  = np.zeros_like(valid_cell); left[:,  1:]  = valid_cell[:, :-1]
+        right = np.zeros_like(valid_cell); right[:, :-1] = valid_cell[:, 1:]
 
-        Zs   = _safe(Z_grid[nr - 1, :])
-        szj  = Zs[:nc - 1]
-        szj1 = Zs[1:]
-        sy   = np.zeros(nc - 1)
-        sbz  = np.zeros(nc - 1)
+        need_n = valid_cell & ~above   # north face (+Y outward)
+        need_s = valid_cell & ~below   # south face (-Y outward)
+        need_w = valid_cell & ~left    # west  face (-X outward)
+        need_e = valid_cell & ~right   # east  face (+X outward)
 
-        all_v0 += [np.c_[sx,  sy, szj],  np.c_[sx,  sy, szj]]
-        all_v1 += [np.c_[sx,  sy, sbz],  np.c_[sx1, sy, sbz]]
-        all_v2 += [np.c_[sx1, sy, sbz],  np.c_[sx1, sy, szj1]]
+        def _ns_wall(mask, row_of_edge, plus_y):
+            # Wall on a horizontal grid edge (connects col j to col j+1).
+            # row_of_edge(i) gives the grid row index of the edge for quad row i.
+            # Winding verified by cross product:
+            #   +Y (north): Tri1 TL,BR,BL  Tri2 TL,TR,BR
+            #   -Y (south): Tri1 TL,BL,BR  Tri2 TL,BR,TR
+            nonlocal all_v0, all_v1, all_v2
+            wi, wj = np.where(mask)
+            if len(wi) == 0:
+                return
+            ri  = row_of_edge(wi)
+            TL  = np.stack([X_grid[ri, wj],   Y_grid[ri, wj],   Z_grid[ri, wj]],   axis=1)
+            TR  = np.stack([X_grid[ri, wj+1], Y_grid[ri, wj+1], Z_grid[ri, wj+1]], axis=1)
+            BL  = np.stack([X_grid[ri, wj],   Y_grid[ri, wj],   np.zeros(len(wi))], axis=1)
+            BR  = np.stack([X_grid[ri, wj+1], Y_grid[ri, wj+1], np.zeros(len(wi))], axis=1)
+            if plus_y:
+                all_v0 += [TL, TL]; all_v1 += [BR, TR]; all_v2 += [BL, BR]
+            else:
+                all_v0 += [TL, TL]; all_v1 += [BL, BR]; all_v2 += [BR, TR]
 
-        # ── 6c. North wall — row 0, Y=Ymax, outward normal +Y ────────────────
-        # Winding reversed vs. south wall:
-        # Tri1: TL, BR, BL  →  n=(0, +Zj·cw, 0) → +Y ✓
-        # Tri2: TL, TR, BR  →  n=(0, +Zj+1·cw, 0) → +Y ✓
+        def _ew_wall(mask, col_of_edge, plus_x):
+            # Wall on a vertical grid edge (connects row i to row i+1).
+            # col_of_edge(j) gives the grid col index of the edge for quad col j.
+            # Winding verified by cross product:
+            #   -X (west): Tri1 TN,BN,BS  Tri2 TN,BS,TS
+            #   +X (east): Tri1 TN,BS,BN  Tri2 TN,TS,BS
+            nonlocal all_v0, all_v1, all_v2
+            wi, wj = np.where(mask)
+            if len(wi) == 0:
+                return
+            ci  = col_of_edge(wj)
+            TN  = np.stack([X_grid[wi,   ci], Y_grid[wi,   ci], Z_grid[wi,   ci]], axis=1)
+            TS  = np.stack([X_grid[wi+1, ci], Y_grid[wi+1, ci], Z_grid[wi+1, ci]], axis=1)
+            BN  = np.stack([X_grid[wi,   ci], Y_grid[wi,   ci], np.zeros(len(wi))], axis=1)
+            BS  = np.stack([X_grid[wi+1, ci], Y_grid[wi+1, ci], np.zeros(len(wi))], axis=1)
+            if plus_x:
+                all_v0 += [TN, TN]; all_v1 += [BS, TS]; all_v2 += [BN, BS]
+            else:
+                all_v0 += [TN, TN]; all_v1 += [BN, BS]; all_v2 += [BS, TS]
 
-        Zn   = _safe(Z_grid[0, :])
-        nzj  = Zn[:nc - 1]
-        nzj1 = Zn[1:]
-        ny   = np.full(nc - 1, Ymax)
-        nbz  = np.zeros(nc - 1)
-
-        all_v0 += [np.c_[sx,  ny, nzj],  np.c_[sx,  ny, nzj]]
-        all_v1 += [np.c_[sx1, ny, nbz],  np.c_[sx1, ny, nzj1]]
-        all_v2 += [np.c_[sx,  ny, nbz],  np.c_[sx1, ny, nbz]]
-
-        # ── 6d. West wall — col 0, X=0, outward normal -X ────────────────────
-        # For each row strip i:
-        #   TN=(0, Yi,  Zi)   TS=(0, Yi1, Zi+1)   BN=(0, Yi, 0)   BS=(0, Yi1, 0)
-        #
-        # Tri1: TN, BN, BS  →  e1=(0,0,-Zi), e2=(0,-ch,0)
-        #                       n_x = -Zi·ch < 0 → -X ✓
-        # Tri2: TN, BS, TS  →  n_x = -Zi+1·ch < 0 → -X ✓
-
-        Zw   = _safe(Z_grid[:, 0])
-        wzi  = Zw[:nr - 1]
-        wzi1 = Zw[1:]
-        wx   = np.zeros(nr - 1)
-        wbz  = np.zeros(nr - 1)
-
-        all_v0 += [np.c_[wx, Yi,  wzi],  np.c_[wx, Yi,  wzi]]
-        all_v1 += [np.c_[wx, Yi,  wbz],  np.c_[wx, Yi1, wbz]]
-        all_v2 += [np.c_[wx, Yi1, wbz],  np.c_[wx, Yi1, wzi1]]
-
-        # ── 6e. East wall — col nc-1, X=Xmax, outward normal +X ──────────────
-        # Winding reversed vs. west wall:
-        # Tri1: TN, BS, BN  →  n_x = +Zi·ch > 0 → +X ✓
-        # Tri2: TN, TS, BS  →  n_x = +Zi+1·ch > 0 → +X ✓
-
-        Ze   = _safe(Z_grid[:, nc - 1])
-        ezi  = Ze[:nr - 1]
-        ezi1 = Ze[1:]
-        ex   = np.full(nr - 1, Xmax)
-        ebz  = np.zeros(nr - 1)
-
-        all_v0 += [np.c_[ex, Yi,  ezi],  np.c_[ex, Yi,  ezi]]
-        all_v1 += [np.c_[ex, Yi1, ebz],  np.c_[ex, Yi1, ezi1]]
-        all_v2 += [np.c_[ex, Yi,  ebz],  np.c_[ex, Yi1, ebz]]
+        _ns_wall(need_n, lambda i: i,     plus_y=True)   # north edge at grid row i
+        _ns_wall(need_s, lambda i: i + 1, plus_y=False)  # south edge at grid row i+1
+        _ew_wall(need_w, lambda j: j,     plus_x=False)  # west  edge at grid col j
+        _ew_wall(need_e, lambda j: j + 1, plus_x=True)   # east  edge at grid col j+1
 
         # ── 6f. Bottom face — Z=0, outward normal -Z ─────────────────────────
-        # Corners: SW=(0,0,0) NW=(0,Ymax,0) NE=(Xmax,Ymax,0) SE=(Xmax,0,0)
+        # Mirrors the terrain: same valid quads, same XY positions, all Z=0,
+        # reversed winding. Every wall-bottom edge is thereby shared by exactly
+        # one bottom-face triangle — no T-junctions, fully manifold.
         #
-        # Tri1: SW, NW, NE  →  n_z = -Ymax·Xmax < 0 → -Z ✓
-        # Tri2: SW, NE, SE  →  n_z = -Ymax·Xmax < 0 → -Z ✓
+        # Winding (reversed from terrain → outward -Z normal):
+        #   Tri1: A, C, D   (NW→SE→SW)   n_z = −cw·ch < 0 ✓
+        #   Tri2: A, B, C   (NW→NE→SE)   n_z = −cw·ch < 0 ✓
 
-        SW = np.array([[0.0,  0.0,  0.0]])
-        NW = np.array([[0.0,  Ymax, 0.0]])
-        NE = np.array([[Xmax, Ymax, 0.0]])
-        SE = np.array([[Xmax, 0.0,  0.0]])
+        def _bv(ri, ci):
+            return np.stack([X_grid[ri, ci], Y_grid[ri, ci], np.zeros(len(ri))], axis=1)
 
-        all_v0 += [SW, SW]
-        all_v1 += [NW, NE]
-        all_v2 += [NE, SE]
+        bA = _bv(ii,     jj)
+        bB = _bv(ii,     jj + 1)
+        bC = _bv(ii + 1, jj + 1)
+        bD = _bv(ii + 1, jj)
+
+        all_v0 += [bA, bA]
+        all_v1 += [bC, bB]
+        all_v2 += [bD, bC]
+        del bA, bB, bC, bD
 
         # ── Step 7 / 8 — Compute per-triangle normals ────────────────────────
         messages.addMessage("Step 7/8 — Computing normals...")
