@@ -15,6 +15,26 @@ import struct
 import tempfile
 
 
+def _detect_elev_units(dem_path):
+    """Returns 'Meters', 'Feet', or None if no VCS is defined on the DEM.
+
+    The arcpy VerticalCoordinateSystem object exposes .name (not .linearUnitName,
+    which belongs to SpatialReference for XY units).  VCS names encode the unit
+    when feet are used, e.g. 'NAVD_1988_height_ftUS', 'NGVD_1929_Height_US_Ft'.
+    A VCS that exists but contains no foot token is assumed to be in meters.
+    """
+    try:
+        sr = arcpy.Describe(dem_path).spatialReference
+        if sr and sr.VCS:
+            name = sr.VCS.name.lower()
+            if any(tok in name for tok in ("foot", "feet", "_ft", "ftus")):
+                return "Feet"
+            return "Meters"
+    except Exception:
+        pass
+    return None
+
+
 # =============================================================================
 class Toolbox(object):
     def __init__(self):
@@ -94,87 +114,99 @@ class DEMToSTL(object):
             direction="Input",
         )
 
-        # 1 — Output STL file
+        # 1 — Elevation Units
         p1 = arcpy.Parameter(
+            displayName="Elevation Units",
+            name="elev_units",
+            datatype="GPString",
+            parameterType="Required",
+            direction="Input",
+        )
+        p1.filter.type = "ValueList"
+        p1.filter.list = ["Meters", "Feet"]
+        # No default — forces an explicit choice when auto-detection fails.
+
+        # 2 — Output STL file
+        p2 = arcpy.Parameter(
             displayName="Output STL File",
             name="out_stl",
             datatype="DEFile",
             parameterType="Required",
             direction="Output",
         )
-        p1.filter.list = ["stl"]
+        p2.filter.list = ["stl"]
 
-        # 2 — Max print-bed dimension
-        p2 = arcpy.Parameter(
+        # 3 — Max print-bed dimension
+        p3 = arcpy.Parameter(
             displayName="Maximum Print-Bed Dimension (mm)",
             name="max_bed_dim",
             datatype="GPDouble",
             parameterType="Required",
             direction="Input",
         )
-        p2.value = 200.0
+        p3.value = 200.0
 
-        # 3 — Vertical exaggeration
-        p3 = arcpy.Parameter(
+        # 4 — Vertical exaggeration
+        p4 = arcpy.Parameter(
             displayName="Vertical Exaggeration Factor",
             name="vert_exag",
             datatype="GPDouble",
             parameterType="Required",
             direction="Input",
         )
-        p3.value = 1.0
+        p4.value = 1.0
 
-        # 4 — Minimum detail size (controls resampling / mesh density)
-        p4 = arcpy.Parameter(
+        # 5 — Minimum detail size (controls resampling / mesh density)
+        p5 = arcpy.Parameter(
             displayName="Minimum Detail Size (mm)",
             name="min_detail",
             datatype="GPDouble",
             parameterType="Required",
             direction="Input",
         )
-        p4.value = 0.5
+        p5.value = 0.5
 
-        # 5 — Base thickness
-        p5 = arcpy.Parameter(
+        # 6 — Base thickness
+        p6 = arcpy.Parameter(
             displayName="Base Thickness (mm)",
             name="base_thick",
             datatype="GPDouble",
             parameterType="Required",
             direction="Input",
         )
-        p5.value = 3.0
+        p6.value = 3.0
 
-        # 6 — Z floor (vertical reference for the base of the model)
-        p6 = arcpy.Parameter(
+        # 7 — Z floor (vertical reference for the base of the model)
+        p7 = arcpy.Parameter(
             displayName="Z Floor Reference",
             name="z_floor",
             datatype="GPString",
             parameterType="Required",
             direction="Input",
         )
-        p6.filter.type = "ValueList"
-        p6.filter.list = [
+        p7.filter.type = "ValueList"
+        p7.filter.list = [
             "Minimum Elevation",
             "Sea Level (0)",
         ]
-        p6.value = "Minimum Elevation"
+        p7.value = "Minimum Elevation"
 
-        # 7 — Model footprint (rectangular vs. tight boundary)
-        p7 = arcpy.Parameter(
+        # 8 — Model footprint (rectangular vs. tight boundary)
+        p8 = arcpy.Parameter(
             displayName="Model Footprint",
             name="model_footprint",
             datatype="GPString",
             parameterType="Required",
             direction="Input",
         )
-        p7.filter.type = "ValueList"
-        p7.filter.list = [
+        p8.filter.type = "ValueList"
+        p8.filter.list = [
             "Rectangular",
             "Tight (Follows DEM Boundary)",
         ]
-        p7.value = "Rectangular"
+        p8.value = "Rectangular"
 
-        return [p0, p1, p2, p3, p4, p5, p6, p7]
+        return [p0, p1, p2, p3, p4, p5, p6, p7, p8]
 
     # ------------------------------------------------------------------
     def isLicensed(self):
@@ -182,14 +214,30 @@ class DEMToSTL(object):
 
     # ------------------------------------------------------------------
     def updateParameters(self, parameters):
-        pass
+        dem_param   = parameters[0]
+        units_param = parameters[1]
+
+        # Re-detect elevation units every time the DEM changes.
+        # altered=True + hasBeenValidated=False means the DEM was just modified
+        # by the user, so we overwrite whatever was previously in the units field
+        # (intentionally non-sticky: re-selecting a different DEM always re-detects).
+        if dem_param.value and dem_param.altered and not dem_param.hasBeenValidated:
+            units_param.value = _detect_elev_units(dem_param.valueAsText)
 
     # ------------------------------------------------------------------
     def updateMessages(self, parameters):
-        p_bed    = parameters[2]
-        p_exag   = parameters[3]
-        p_detail = parameters[4]
-        p_base   = parameters[5]
+        dem_param  = parameters[0]
+        units_param = parameters[1]
+        p_bed    = parameters[3]
+        p_exag   = parameters[4]
+        p_detail = parameters[5]
+        p_base   = parameters[6]
+
+        if dem_param.value and not units_param.value:
+            units_param.setWarningMessage(
+                "Elevation units could not be auto-detected from this DEM's spatial "
+                "reference (no Vertical Coordinate System defined). Please select."
+            )
 
         if p_bed.value is not None:
             if p_bed.value <= 0:
@@ -210,13 +258,14 @@ class DEMToSTL(object):
     def execute(self, parameters, messages):
 
         in_dem          = parameters[0].valueAsText
-        out_stl         = parameters[1].valueAsText
-        max_bed         = float(parameters[2].value)
-        vert_exag       = float(parameters[3].value)
-        min_detail      = float(parameters[4].value)
-        base_thick      = float(parameters[5].value)
-        z_floor_mode    = parameters[6].valueAsText
-        footprint_mode  = parameters[7].valueAsText
+        elev_units      = parameters[1].valueAsText
+        out_stl         = parameters[2].valueAsText
+        max_bed         = float(parameters[3].value)
+        vert_exag       = float(parameters[4].value)
+        min_detail      = float(parameters[5].value)
+        base_thick      = float(parameters[6].value)
+        z_floor_mode    = parameters[7].valueAsText
+        footprint_mode  = parameters[8].valueAsText
 
         tight = (footprint_mode == "Tight (Follows DEM Boundary)")
 
@@ -226,6 +275,7 @@ class DEMToSTL(object):
         # ── Step 1 / 8 — Describe DEM ────────────────────────────────────────
         messages.addMessage("Step 1/8 — Analyzing input DEM...")
         desc    = arcpy.Describe(in_dem)
+        sr      = desc.spatialReference
         ext     = desc.extent
         orig_cs = desc.meanCellWidth   # map units per native cell
 
@@ -233,6 +283,34 @@ class DEMToSTL(object):
         rw_h = ext.height
         messages.addMessage(f"  Extent    : {rw_w:.3f} x {rw_h:.3f} map units")
         messages.addMessage(f"  Cell size : {orig_cs:.4f} map units")
+
+        # Compute z_to_xy: converts elevation values to the same linear unit as
+        # the XY map units before xy_scale is applied.  Handles the common case
+        # where Z is in feet but XY is in meters (e.g. UTM + NAVD88 in feet).
+        xy_unit_name = sr.linearUnitName.lower() if sr else "meter"
+        xy_is_feet   = "foot" in xy_unit_name or "feet" in xy_unit_name
+
+        if elev_units is None:
+            elev_units = "Feet" if xy_is_feet else "Meters"
+            messages.addMessage(f"  Elevation units : not specified — assuming {elev_units} (same as XY units)")
+
+        z_is_feet    = (elev_units == "Feet")
+
+        if z_is_feet and not xy_is_feet:
+            z_to_xy = 0.3048        # feet → meters
+        elif not z_is_feet and xy_is_feet:
+            z_to_xy = 1.0 / 0.3048  # meters → feet (unusual but correct)
+        else:
+            z_to_xy = 1.0           # same units, no conversion needed
+
+        if z_to_xy != 1.0:
+            messages.addMessage(
+                f"  Elevation units : {elev_units} → XY units are "
+                f"{'feet' if xy_is_feet else 'meters'}  "
+                f"(z_to_xy factor: {z_to_xy:.7f})"
+            )
+        else:
+            messages.addMessage(f"  Elevation units : {elev_units} (matches XY units, no conversion)")
 
         # ── Step 2 / 8 — Scale and target cell size ──────────────────────────
         messages.addMessage("Step 2/8 — Computing scale factors...")
@@ -334,12 +412,15 @@ class DEMToSTL(object):
         # z=base_thick → floor elevation (minimum terrain or sea level)
         # z=base_thick + relief_mm → terrain peaks
         # NaN cells survive the linear transform as NaN (tight mode only).
-        z_mm = (arr - z_ref) * xy_scale * vert_exag + base_thick
+        #
+        # z_to_xy normalises elevation values into XY map units before xy_scale
+        # converts map units → mm.  When Z and XY share the same unit, z_to_xy=1.
+        z_mm = (arr - z_ref) * z_to_xy * xy_scale * vert_exag + base_thick
 
         relief_mm      = float(np.nanmax(z_mm)) - base_thick
         total_z_mm     = float(np.nanmax(z_mm))
         elev_range_raw = elev_max_raw - elev_min_raw
-        messages.addMessage(f"  Elev range     : {elev_min_raw:.2f} – {elev_max_raw:.2f}  (Δ{elev_range_raw:.2f} map units)")
+        messages.addMessage(f"  Elev range     : {elev_min_raw:.2f} – {elev_max_raw:.2f}  (Δ{elev_range_raw:.2f} {elev_units.lower()})")
         messages.addMessage(f"  Terrain relief : {relief_mm:.2f} mm  (x{vert_exag:.2f} exag)")
         messages.addMessage(f"  Total height   : {total_z_mm:.2f} mm  (terrain + {base_thick:.1f} mm base)")
 
