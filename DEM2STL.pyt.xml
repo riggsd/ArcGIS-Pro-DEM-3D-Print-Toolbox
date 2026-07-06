@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xml:lang="en">
+  <Esri>
+    <CreaDate>20260626</CreaDate>
+    <CreaTime>01331300</CreaTime>
+    <ArcGISFormat>1.0</ArcGISFormat>
+    <SyncOnce>TRUE</SyncOnce>
+  </Esri>
+  <toolbox name="DEM2STL" alias="dem2stl">
+    <arcToolboxHelpPath>c:\program files\arcgis\pro\Resources\Help\gp</arcToolboxHelpPath>
+    <toolsets/>
+  </toolbox>
+  <dataIdInfo>
+    <idCitation>
+      <resTitle>DEM to STL Toolbox</resTitle>
+    </idCitation>
+    <idAbs>Converts Digital Elevation Model (DEM) rasters to watertight binary STL files for 3D printing. Contains two tools: DEM to STL, which converts a single DEM to one STL file, and Split DEM to STL, which divides a DEM by a polygon feature class and produces a separate STL file for each piece at a consistent scale.</idAbs>
+    <searchKeys>
+      <keyword>DEM</keyword>
+      <keyword>STL</keyword>
+      <keyword>3D printing</keyword>
+      <keyword>elevation</keyword>
+      <keyword>topography</keyword>
+      <keyword>terrain</keyword>
+      <keyword>digital elevation model</keyword>
+    </searchKeys>
+  </dataIdInfo>
+  <distInfo>
+    <distributor>
+      <distorFormat>
+        <formatName>ArcToolbox Toolbox</formatName>
+      </distorFormat>
+    </distributor>
+  </distInfo>
+</metadata>
