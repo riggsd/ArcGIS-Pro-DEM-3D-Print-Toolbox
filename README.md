@@ -70,3 +70,20 @@ Polygons that do not overlap the DEM extent are skipped with a warning. Processi
 | **Base Thickness (mm)** | 3.0 | Solid base thickness beneath each piece's terrain floor, in millimeters. Applied to every piece. |
 | **Z Floor Reference** | Sea Level (0) | Controls the terrain floor elevation for each piece. **Sea Level (0)** uses elevation 0 as the floor for every piece — because the datum reference is shared, adjacent pieces will have consistent relative heights and can be arranged side-by-side to form a continuous landscape. **Minimum Elevation (per piece)** uses each piece's own local minimum as its floor; pieces stand independently but may differ in absolute model height. |
 | **Model Footprint** | Tight (Follows Polygon Boundary) | How the clipped boundary of each piece is handled. **Tight** traces walls along the actual polygon boundary and is recommended for split mode. **Rectangular** fills areas outside the polygon with the floor elevation, producing a rectangular block aligned to the polygon's bounding box. |
+
+
+# License
+
+Copyright (C) 2026 David A. Riggs <david.a.riggs@gmail.com>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, version 3 of the License.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
