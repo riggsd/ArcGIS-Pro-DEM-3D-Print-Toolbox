@@ -1,239 +1,157 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <metadata xml:lang="en">
-  <Esri>
-    <CreaDate>20260630</CreaDate>
-    <CreaTime>14021000</CreaTime>
-    <ArcGISFormat>1.0</ArcGISFormat>
-    <SyncOnce>TRUE</SyncOnce>
-  </Esri>
-  <tool name="SplitDEMToSTL" displayname="Split DEM to STL" toolboxalias="dem2stl" xmlns="">
-    <parameters>
-
-      <param sync="true" name="in_dem" displayname="Input DEM" datatype="Raster Layer"
-             direction="Input" expression="in_dem" type="Required">
-        <dialogReference>
-          &lt;p&gt;The digital elevation model raster to split and convert. Must be a single-band
-          raster containing elevation values. Both floating-point and integer pixel types are
-          supported; NoData cells are handled automatically.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Path or layer reference to the input single-band elevation raster.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="elev_units" displayname="Elevation Units" datatype="String"
-             direction="Input" expression="elev_units" type="Required">
-        <dialogReference>
-          &lt;p&gt;The vertical unit of measure for the elevation values stored in the DEM
-          (&lt;b&gt;Meters&lt;/b&gt; or &lt;b&gt;Feet&lt;/b&gt;).&lt;/p&gt;
-          &lt;p&gt;When the DEM's spatial reference includes a Vertical Coordinate System (VCS),
-          this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack
-          a formal VCS even when the elevation unit is well-known; in those cases the field is
-          left blank and a warning is shown — manual selection is required.&lt;/p&gt;
-          &lt;p&gt;The same elevation unit applies to all pieces produced by this tool.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;&lt;code&gt;"Meters"&lt;/code&gt; or &lt;code&gt;"Feet"&lt;/code&gt;. Applied consistently
-          to all output pieces.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="split_polys" displayname="Split Polygon Feature Class"
-             datatype="Feature Layer" direction="Input" expression="split_polys" type="Required">
-        <dialogReference>
-          &lt;p&gt;A polygon feature class whose features define the boundaries of the DEM pieces
-          to produce. Each polygon that overlaps the DEM extent generates one STL file.
-          Polygons that do not overlap the DEM are skipped with a warning.&lt;/p&gt;
-          &lt;p&gt;The feature class may be in a different coordinate system from the DEM; ArcGIS
-          reprojects the clipping boundary on the fly.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Polygon feature class or layer. One STL file is produced per overlapping
-          feature.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="name_attr" displayname="Name Attribute" datatype="Field"
-             direction="Input" expression="name_attr" type="Optional">
-        <dialogReference>
-          &lt;p&gt;An optional field from the Split Polygon Feature Class whose values are
-          appended to the Output Base Name to form each output filename.&lt;/p&gt;
-          &lt;p&gt;Example: with Base Name &lt;code&gt;Region&lt;/code&gt; and a Name Attribute field
-          containing &lt;code&gt;Valley Floor&lt;/code&gt;, the output file is named
-          &lt;code&gt;Region_Valley_Floor.stl&lt;/code&gt;. Values are sanitized to remove
-          characters that are invalid in filenames.&lt;/p&gt;
-          &lt;p&gt;If left blank, pieces are numbered sequentially:
-          &lt;code&gt;Region_1.stl&lt;/code&gt;, &lt;code&gt;Region_2.stl&lt;/code&gt;, etc.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Field name from the polygon feature class used to name each output file.
-          Leave blank to use sequential numbering.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="out_folder" displayname="Output Folder" datatype="Folder"
-             direction="Input" expression="out_folder" type="Required">
-        <dialogReference>
-          &lt;p&gt;The folder in which all output STL files are written. The folder is created
-          if it does not already exist.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Path to the output directory. Created automatically if it does not exist.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="base_name" displayname="Output Base Name" datatype="String"
-             direction="Input" expression="base_name" type="Required">
-        <dialogReference>
-          &lt;p&gt;The filename prefix applied to all output STL files. Each file is named
-          &lt;code&gt;&amp;lt;Base Name&amp;gt;_&amp;lt;piece name or number&amp;gt;.stl&lt;/code&gt;.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Filename prefix. Outputs are named &lt;code&gt;BaseName_PieceName.stl&lt;/code&gt; or
-          &lt;code&gt;BaseName_1.stl&lt;/code&gt;, etc.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="max_bed_dim" displayname="Maximum Print-Bed Dimension (mm)"
-             datatype="Double" direction="Input" expression="max_bed_dim" type="Required">
-        <dialogReference>
-          &lt;p&gt;The longest dimension of the 3D printer's build plate in millimeters. The scale
-          is computed from the &lt;i&gt;largest&lt;/i&gt; polygon piece so that piece fits within this
-          dimension. All other pieces are produced at the same scale and will print smaller
-          than the bed. Default: 180 mm.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Maximum build-plate dimension in millimeters. The largest piece is scaled to
-          fit; all other pieces use the same scale.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="vert_exag" displayname="Vertical Exaggeration Factor"
-             datatype="Double" direction="Input" expression="vert_exag" type="Required">
-        <dialogReference>
-          &lt;p&gt;Multiplier applied to terrain relief. Use &lt;code&gt;1.0&lt;/code&gt; for a true-scale
-          representation. Applied consistently to every piece. Default: 1.0.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Vertical exaggeration multiplier (must be &amp;gt; 0). Applied to every piece.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="min_detail" displayname="Minimum Detail Size (mm)"
-             datatype="Double" direction="Input" expression="min_detail" type="Required">
-        <dialogReference>
-          &lt;p&gt;The smallest surface feature to preserve in the output models, in millimeters.
-          A single target cell size is computed from this value and the global scale, then
-          applied to every piece — ensuring consistent mesh density across the entire set.
-          Default: 0.2 mm.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Smallest resolvable feature in millimeters (must be &amp;gt; 0). Applied
-          uniformly to all pieces.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="base_thick" displayname="Base Thickness (mm)"
-             datatype="Double" direction="Input" expression="base_thick" type="Required">
-        <dialogReference>
-          &lt;p&gt;Thickness of the solid flat base beneath each piece's terrain floor, in
-          millimeters. Applied to every piece. A minimum of 1–2 mm is recommended. Default:
-          3.0 mm.&lt;/p&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;Solid base thickness in millimeters (must be &amp;ge; 0). Applied to every piece.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="z_floor" displayname="Z Floor Reference" datatype="String"
-             direction="Input" expression="z_floor" type="Required">
-        <dialogReference>
-          &lt;p&gt;Controls which elevation is mapped to the bottom of the terrain surface on
-          each piece.&lt;/p&gt;
-          &lt;ul&gt;
-            &lt;li&gt;&lt;b&gt;Sea Level (0)&lt;/b&gt; — Elevation 0 is the terrain floor for every
-            piece. Because the datum reference is shared, pieces that cover adjacent areas will
-            have consistent relative heights and can be physically arranged side-by-side to form
-            a continuous landscape.&lt;/li&gt;
-            &lt;li&gt;&lt;b&gt;Minimum Elevation (per piece)&lt;/b&gt; — Each piece's local minimum
-            elevation is its own terrain floor. Pieces stand independently at full base
-            thickness above their lowest terrain point but may differ in absolute model height.
-            Use this when pieces are intended as separate standalone models rather than
-            components of a matched set.&lt;/li&gt;
-          &lt;/ul&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;&lt;code&gt;"Sea Level (0)"&lt;/code&gt; or
-          &lt;code&gt;"Minimum Elevation (per piece)"&lt;/code&gt;.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-      <param sync="true" name="model_footprint" displayname="Model Footprint" datatype="String"
-             direction="Input" expression="model_footprint" type="Required">
-        <dialogReference>
-          &lt;p&gt;Controls how NoData cells at the boundary of each clipped piece are handled.&lt;/p&gt;
-          &lt;ul&gt;
-            &lt;li&gt;&lt;b&gt;Tight (Follows Polygon Boundary)&lt;/b&gt; — NoData cells outside the
-            polygon are left as void. Walls follow the actual polygon shape. Recommended for
-            split mode because the polygon already defines the intended boundary.&lt;/li&gt;
-            &lt;li&gt;&lt;b&gt;Rectangular&lt;/b&gt; — NoData cells are filled with the floor elevation.
-            Each piece becomes a rectangular block aligned to the polygon's bounding box, which
-            may overlap adjacent pieces.&lt;/li&gt;
-          &lt;/ul&gt;
-        </dialogReference>
-        <pythonReference>
-          &lt;p&gt;&lt;code&gt;"Tight (Follows Polygon Boundary)"&lt;/code&gt; or
-          &lt;code&gt;"Rectangular"&lt;/code&gt;.&lt;/p&gt;
-        </pythonReference>
-      </param>
-
-    </parameters>
-    <summary>
-      &lt;p&gt;Splits a DEM by a polygon feature class and converts each piece to a separate
-      watertight binary STL file for 3D printing. A single consistent scale is applied to
-      all pieces — chosen so the largest piece fits within the specified print-bed dimension
-      — allowing pieces to be arranged together at the correct relative size.&lt;/p&gt;
-    </summary>
-    <usage>
-      &lt;p&gt;The tool operates in two passes. First, all polygon extents are measured against
-      the DEM extent to find the largest piece dimension, from which a global XY scale and
-      target cell size are computed. Second, each polygon clips the DEM, the clipped piece
-      is resampled to the target cell size, triangulated, and written as a binary STL.
-      Polygons that do not overlap the DEM are skipped with a warning.&lt;/p&gt;
-      &lt;p&gt;Choose &lt;b&gt;Sea Level (0)&lt;/b&gt; for Z Floor Reference when the pieces are intended
-      to be arranged side-by-side to form a continuous landscape — the shared datum ensures
-      consistent relative heights across all pieces.&lt;/p&gt;
-      &lt;p&gt;The &lt;b&gt;Name Attribute&lt;/b&gt; field is optional. When provided, each output STL is
-      named using the corresponding attribute value from the polygon feature class, making
-      it easy to identify individual pieces. Invalid filename characters in the attribute
-      value are replaced with underscores.&lt;/p&gt;
-    </usage>
-  </tool>
-  <dataIdInfo>
-    <idCitation>
-      <resTitle>Split DEM to STL</resTitle>
-    </idCitation>
-    <idAbs>Splits a DEM by a polygon feature class and converts each piece to a separate watertight binary STL file for 3D printing, using a consistent scale across all pieces.</idAbs>
-    <searchKeys>
-      <keyword>DEM</keyword>
-      <keyword>STL</keyword>
-      <keyword>3D printing</keyword>
-      <keyword>elevation</keyword>
-      <keyword>topography</keyword>
-      <keyword>terrain</keyword>
-      <keyword>split</keyword>
-      <keyword>tile</keyword>
-      <keyword>digital elevation model</keyword>
-    </searchKeys>
-  </dataIdInfo>
-  <mdHrLv>
-    <ScopeCd value="005"/>
-  </mdHrLv>
-  <distInfo>
-    <distributor>
-      <distorFormat>
-        <formatName>ArcToolbox Tool</formatName>
-      </distorFormat>
-    </distributor>
-  </distInfo>
+	<Esri>
+		<CreaDate>20260630</CreaDate>
+		<CreaTime>14021000</CreaTime>
+		<ArcGISFormat>1.0</ArcGISFormat>
+		<SyncOnce>TRUE</SyncOnce>
+	</Esri>
+	<tool name="SplitDEMToSTL" displayname="Split DEM to STL" toolboxalias="dem2stl" xmlns="">
+		<parameters>
+			<param sync="true" name="in_dem" displayname="Input DEM" datatype="Raster Layer" direction="Input" expression="in_dem" type="Required">
+				<dialogReference>
+					<para>The digital elevation model raster to split and convert. Must be a single-band raster containing elevation values. Both floating-point and integer pixel types are supported; NoData cells are handled automatically.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Path or layer reference to the input single-band elevation raster.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="elev_units" displayname="Elevation Units" datatype="String" direction="Input" expression="elev_units" type="Required">
+				<dialogReference>
+					<para>The vertical unit of measure for the elevation values stored in the DEM (<b>Meters</b> or <b>Feet</b>).</para>
+					<para>When the DEM's spatial reference includes a Vertical Coordinate System (VCS), this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack a formal VCS even when the elevation unit is well-known; in those cases the field is left blank and a warning is shown — manual selection is required.</para>
+					<para>The same elevation unit applies to all pieces produced by this tool.</para>
+				</dialogReference>
+				<pythonReference>
+					<para><code>"Meters"</code> or <code>"Feet"</code>. Applied consistently to all output pieces.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="split_polys" displayname="Split Polygon Feature Class" datatype="Feature Layer" direction="Input" expression="split_polys" type="Required">
+				<dialogReference>
+					<para>A polygon feature class whose features define the boundaries of the DEM pieces to produce. Each polygon that overlaps the DEM extent generates one STL file. Polygons that do not overlap the DEM are skipped with a warning.</para>
+					<para>The feature class may be in a different coordinate system from the DEM; ArcGIS reprojects the clipping boundary on the fly.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Polygon feature class or layer. One STL file is produced per overlapping feature.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="name_attr" displayname="Name Attribute" datatype="Field" direction="Input" expression="name_attr" type="Optional">
+				<dialogReference>
+					<para>An optional field from the Split Polygon Feature Class whose values are appended to the Output Base Name to form each output filename.</para>
+					<para>Example: with Base Name <code>Region</code> and a Name Attribute field containing <code>Valley Floor</code>, the output file is named <code>Region_Valley_Floor.stl</code>. Values are sanitized to remove characters that are invalid in filenames.</para>
+					<para>If left blank, pieces are numbered sequentially: <code>Region_1.stl</code>, <code>Region_2.stl</code>, etc.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Field name from the polygon feature class used to name each output file. Leave blank to use sequential numbering.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="out_folder" displayname="Output Folder" datatype="Folder" direction="Input" expression="out_folder" type="Required">
+				<dialogReference>
+					<para>The folder in which all output STL files are written. The folder is created if it does not already exist.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Path to the output directory. Created automatically if it does not exist.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="base_name" displayname="Output Base Name" datatype="String" direction="Input" expression="base_name" type="Required">
+				<dialogReference>
+					<para>The filename prefix applied to all output STL files. Each file is named <code>&lt;Base Name&gt;_&lt;piece name or number&gt;.stl</code>.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Filename prefix. Outputs are named <code>BaseName_PieceName.stl</code> or <code>BaseName_1.stl</code>, etc.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="max_bed_dim" displayname="Maximum Print-Bed Dimension (mm)" datatype="Double" direction="Input" expression="max_bed_dim" type="Required">
+				<dialogReference>
+					<para>The longest dimension of the 3D printer's build plate in millimeters. The scale is computed from the <b>largest</b> polygon piece so that piece fits within this dimension. All other pieces are produced at the same scale and will print smaller than the bed. Default: 180 mm.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Maximum build-plate dimension in millimeters. The largest piece is scaled to fit; all other pieces use the same scale.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="vert_exag" displayname="Vertical Exaggeration Factor" datatype="Double" direction="Input" expression="vert_exag" type="Required">
+				<dialogReference>
+					<para>Multiplier applied to terrain relief. Use <code>1.0</code> for a true-scale representation. Applied consistently to every piece. Default: 1.0.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Vertical exaggeration multiplier (must be &gt; 0). Applied to every piece.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="min_detail" displayname="Minimum Detail Size (mm)" datatype="Double" direction="Input" expression="min_detail" type="Required">
+				<dialogReference>
+					<para>The smallest surface feature to preserve in the output models, in millimeters. A single target cell size is computed from this value and the global scale, then applied to every piece — ensuring consistent mesh density across the entire set. Default: 0.2 mm.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Smallest resolvable feature in millimeters (must be &gt; 0). Applied uniformly to all pieces.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="base_thick" displayname="Base Thickness (mm)" datatype="Double" direction="Input" expression="base_thick" type="Required">
+				<dialogReference>
+					<para>Thickness of the solid flat base beneath each piece's terrain floor, in millimeters. Applied to every piece. A minimum of 1–2 mm is recommended. Default: 3.0 mm.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Solid base thickness in millimeters (must be ≥ 0). Applied to every piece.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="z_floor" displayname="Z Floor Reference" datatype="String" direction="Input" expression="z_floor" type="Required">
+				<dialogReference>
+					<para>Controls which elevation is mapped to the bottom of the terrain surface on each piece.</para>
+					<para><bulletList>
+						<bullet_item><b>Sea Level (0)</b> — Elevation 0 is the terrain floor for every piece. Because the datum reference is shared, pieces that cover adjacent areas will have consistent relative heights and can be physically arranged side-by-side to form a continuous landscape.</bullet_item>
+						<bullet_item><b>Minimum Elevation (per piece)</b> — Each piece's local minimum elevation is its own terrain floor. Pieces stand independently at full base thickness above their lowest terrain point but may differ in absolute model height. Use this when pieces are intended as separate standalone models rather than components of a matched set.</bullet_item>
+					</bulletList></para>
+				</dialogReference>
+				<pythonReference>
+					<para><code>"Sea Level (0)"</code> or <code>"Minimum Elevation (per piece)"</code>.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="model_footprint" displayname="Model Footprint" datatype="String" direction="Input" expression="model_footprint" type="Required">
+				<dialogReference>
+					<para>Controls how NoData cells at the boundary of each clipped piece are handled.</para>
+					<para><bulletList>
+						<bullet_item><b>Tight (Follows Polygon Boundary)</b> — NoData cells outside the polygon are left as void. Walls follow the actual polygon shape. Recommended for split mode because the polygon already defines the intended boundary.</bullet_item>
+						<bullet_item><b>Rectangular</b> — NoData cells are filled with the floor elevation. Each piece becomes a rectangular block aligned to the polygon's bounding box, which may overlap adjacent pieces.</bullet_item>
+					</bulletList></para>
+				</dialogReference>
+				<pythonReference>
+					<para><code>"Tight (Follows Polygon Boundary)"</code> or <code>"Rectangular"</code>.</para>
+				</pythonReference>
+			</param>
+		</parameters>
+		<summary>
+			<para>Splits a DEM by a polygon feature class and converts each piece to a separate watertight binary STL file for 3D printing. A single consistent scale is applied to all pieces — chosen so the largest piece fits within the specified print-bed dimension — allowing pieces to be arranged together at the correct relative size.</para>
+		</summary>
+		<usage>
+			<para>The tool operates in two passes. First, all polygon extents are measured against the DEM extent to find the largest piece dimension, from which a global XY scale and target cell size are computed. Second, each polygon clips the DEM, the clipped piece is resampled to the target cell size, triangulated, and written as a binary STL. Polygons that do not overlap the DEM are skipped with a warning.</para>
+			<para>Choose <b>Sea Level (0)</b> for Z Floor Reference when the pieces are intended to be arranged side-by-side to form a continuous landscape — the shared datum ensures consistent relative heights across all pieces.</para>
+			<para>The <b>Name Attribute</b> field is optional. When provided, each output STL is named using the corresponding attribute value from the polygon feature class, making it easy to identify individual pieces. Invalid filename characters in the attribute value are replaced with underscores.</para>
+		</usage>
+	</tool>
+	<dataIdInfo>
+		<idCitation>
+			<resTitle>Split DEM to STL</resTitle>
+		</idCitation>
+		<idAbs>Splits a DEM by a polygon feature class and converts each piece to a separate watertight binary STL file for 3D printing, using a consistent scale across all pieces.</idAbs>
+		<searchKeys>
+			<keyword>DEM</keyword>
+			<keyword>STL</keyword>
+			<keyword>3D printing</keyword>
+			<keyword>elevation</keyword>
+			<keyword>topography</keyword>
+			<keyword>terrain</keyword>
+			<keyword>split</keyword>
+			<keyword>tile</keyword>
+			<keyword>digital elevation model</keyword>
+		</searchKeys>
+	</dataIdInfo>
+	<mdHrLv>
+		<ScopeCd value="005"/>
+	</mdHrLv>
+	<distInfo>
+		<distributor>
+			<distorFormat>
+				<formatName>ArcToolbox Tool</formatName>
+			</distorFormat>
+		</distributor>
+	</distInfo>
 </metadata>

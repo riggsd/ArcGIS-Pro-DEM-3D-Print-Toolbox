@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <metadata xml:lang="en">
 	<Esri>
-		<CreaDate>20260626</CreaDate>
-		<CreaTime>01332600</CreaTime>
+		<CreaDate>20260803</CreaDate>
+		<CreaTime>00000000</CreaTime>
 		<ArcGISFormat>1.0</ArcGISFormat>
 		<SyncOnce>TRUE</SyncOnce>
 	</Esri>
-	<tool name="DEMToSTL" displayname="DEM to STL" toolboxalias="dem2stl" xmlns="">
+	<tool name="DEMTo3MF" displayname="DEM to 3MF" toolboxalias="dem2stl" xmlns="">
 		<parameters>
 			<param sync="true" name="in_dem" displayname="Input DEM" datatype="Raster Layer" direction="Input" expression="in_dem" type="Required">
 				<dialogReference>
@@ -26,12 +26,12 @@
 					<para><code>"Meters"</code> or <code>"Feet"</code>. The vertical unit of the elevation values in the DEM.</para>
 				</pythonReference>
 			</param>
-			<param sync="true" name="out_stl" displayname="Output STL File" datatype="File" direction="Output" expression="out_stl" type="Required">
+			<param sync="true" name="out_3mf" displayname="Output 3MF File" datatype="File" direction="Output" expression="out_3mf" type="Required">
 				<dialogReference>
-					<para>Path and filename for the output binary STL file. If the <code>.stl</code> extension is omitted it is added automatically. The file is compatible with any 3D printing slicer software.</para>
+					<para>Path and filename for the output 3MF file. If the <code>.3mf</code> extension is omitted it is added automatically. The file can be opened directly in BambuStudio and other 3MF-compatible slicer software.</para>
 				</dialogReference>
 				<pythonReference>
-					<para>Full output file path. The <code>.stl</code> extension is appended if omitted.</para>
+					<para>Full output file path. The <code>.3mf</code> extension is appended if omitted.</para>
 				</pythonReference>
 			</param>
 			<param sync="true" name="max_bed_dim" displayname="Maximum Print-Bed Dimension (mm)" datatype="Double" direction="Input" expression="max_bed_dim" type="Required">
@@ -94,26 +94,29 @@
 			</param>
 		</parameters>
 		<summary>
-			<para>Converts a Digital Elevation Model (DEM) raster to a watertight binary STL file suitable for 3D printing. The model is scaled so its longest horizontal axis fills the specified print-bed dimension, with configurable vertical exaggeration, mesh density, and base thickness.</para>
+			<para>Converts a Digital Elevation Model (DEM) raster to a watertight, standards-compliant 3MF file suitable for 3D printing. The model is scaled so its longest horizontal axis fills the specified print-bed dimension, with configurable vertical exaggeration, mesh density, and base thickness. The 3MF output can be opened directly in BambuStudio for printing on Bambu Lab printers, as well as other 3MF-compatible slicers.</para>
 		</summary>
 		<usage>
+			<para>The geometry produced by this tool is identical to that of <b>DEM to STL</b> — the same DEM with the same settings will yield the same mesh. Only the output container differs: this tool writes a 3MF package (an OPC/ZIP archive containing an indexed, welded mesh in millimeters) rather than a binary STL triangle soup.</para>
 			<para>The DEM is resampled to a resolution controlled by <b>Minimum Detail Size</b> before triangulation, so triangle count is appropriate for the chosen print scale regardless of the DEM's native resolution. The output mesh is fully watertight: terrain surface, perimeter walls, and flat bottom are all closed with consistent outward-facing normals.</para>
 			<para>If the DEM stores elevation in different units from its horizontal coordinate system — for example, UTM meters (XY) with NAVD 88 feet (Z) — set <b>Elevation Units</b> to the correct vertical unit. The tool applies the necessary conversion factor automatically, so the model has correct proportions at Vertical Exaggeration = 1.0.</para>
 		</usage>
 	</tool>
 	<dataIdInfo>
 		<idCitation>
-			<resTitle>DEM to STL</resTitle>
+			<resTitle>DEM to 3MF</resTitle>
 		</idCitation>
-		<idAbs>Converts a DEM raster to a watertight binary STL file for 3D printing.</idAbs>
+		<idAbs>Converts a DEM raster to a watertight 3MF file for 3D printing, importable directly into BambuStudio and other 3MF-compatible slicers.</idAbs>
 		<searchKeys>
 			<keyword>DEM</keyword>
-			<keyword>STL</keyword>
+			<keyword>3MF</keyword>
 			<keyword>3D printing</keyword>
 			<keyword>elevation</keyword>
 			<keyword>topography</keyword>
 			<keyword>terrain</keyword>
 			<keyword>digital elevation model</keyword>
+			<keyword>BambuStudio</keyword>
+			<keyword>Bambu Lab</keyword>
 		</searchKeys>
 	</dataIdInfo>
 	<mdHrLv>
