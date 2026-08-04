@@ -19,7 +19,7 @@
 			<param sync="true" name="elev_units" displayname="Elevation Units" datatype="String" direction="Input" expression="elev_units" type="Required">
 				<dialogReference>
 					<para>The vertical unit of measure for the elevation values stored in the DEM (<b>Meters</b> or <b>Feet</b>).</para>
-					<para>When the DEM's spatial reference includes a Vertical Coordinate System (VCS), this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack a formal VCS even when the elevation unit is well-known; in those cases the field is left blank and a warning is shown — manual selection is required.</para>
+					<para>When the DEM's spatial reference includes a Vertical Coordinate System (VCS), this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack a formal VCS even when the elevation unit is well-known; in those cases the field is left blank and a warning is shown - manual selection is required.</para>
 					<para>Choosing the wrong unit when elevation and horizontal (XY) units differ will produce a model with unintended vertical exaggeration. For example, treating feet as meters introduces an approximately 3.28x vertical stretch at Vertical Exaggeration = 1.0.</para>
 				</dialogReference>
 				<pythonReference>
@@ -72,8 +72,8 @@
 				<dialogReference>
 					<para>Controls which elevation is mapped to the bottom of the terrain surface (the top of the base layer).</para>
 					<para><bulletList>
-							<bullet_item><b>Sea Level (0)</b> — Elevation 0 is the terrain floor. Terrain at or below sea level still appears in the model; the lowest value present sets the actual print-plate contact surface. Useful when the datum relationship matters, such as a coastal area that includes bathymetry.</bullet_item>
-							<bullet_item><b>Minimum Elevation</b> — The lowest elevation in the DEM is mapped to the terrain floor. The full base thickness sits directly beneath the lowest terrain point, maximising the visible relief of the model.</bullet_item>
+							<bullet_item><b>Sea Level (0)</b> - Elevation 0 is the terrain floor. Terrain at or below sea level still appears in the model; the lowest value present sets the actual print-plate contact surface. Useful when the datum relationship matters, such as a coastal area that includes bathymetry.</bullet_item>
+							<bullet_item><b>Minimum Elevation</b> - The lowest elevation in the DEM is mapped to the terrain floor. The full base thickness sits directly beneath the lowest terrain point, maximising the visible relief of the model.</bullet_item>
 						</bulletList></para>
 				</dialogReference>
 				<pythonReference>
@@ -84,8 +84,8 @@
 				<dialogReference>
 					<para>Controls how NoData cells at the DEM boundary are handled.</para>
 					<para><bulletList>
-							<bullet_item><b>Tight (Follows DEM Boundary)</b> — NoData cells are left as void. Perimeter walls follow the actual data boundary of the DEM, producing a smaller, more printable model when the survey area is not rectangular.</bullet_item>
-							<bullet_item><b>Rectangular</b> — NoData cells are filled with the floor elevation, producing a flat-based rectangular block with four straight perimeter walls.</bullet_item>
+							<bullet_item><b>Tight (Follows DEM Boundary)</b> - NoData cells are left as void. Perimeter walls follow the actual data boundary of the DEM, producing a smaller, more printable model when the survey area is not rectangular.</bullet_item>
+							<bullet_item><b>Rectangular</b> - NoData cells are filled with the floor elevation, producing a flat-based rectangular block with four straight perimeter walls.</bullet_item>
 						</bulletList></para>
 				</dialogReference>
 				<pythonReference>
@@ -98,7 +98,7 @@
 		</summary>
 		<usage>
 			<para>The DEM is resampled to a resolution controlled by <b>Minimum Detail Size</b> before triangulation, so triangle count is appropriate for the chosen print scale regardless of the DEM's native resolution. The output mesh is fully watertight: terrain surface, perimeter walls, and flat bottom are all closed with consistent outward-facing normals.</para>
-			<para>If the DEM stores elevation in different units from its horizontal coordinate system — for example, UTM meters (XY) with NAVD 88 feet (Z) — set <b>Elevation Units</b> to the correct vertical unit. The tool applies the necessary conversion factor automatically, so the model has correct proportions at Vertical Exaggeration = 1.0.</para>
+			<para>If the DEM stores elevation in different units from its horizontal coordinate system - for example, UTM meters (XY) with NAVD 88 feet (Z) - set <b>Elevation Units</b> to the correct vertical unit. The tool applies the necessary conversion factor automatically, so the model has correct proportions at Vertical Exaggeration = 1.0.</para>
 		</usage>
 	</tool>
 	<dataIdInfo>

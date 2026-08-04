@@ -19,7 +19,7 @@
 			<param sync="true" name="elev_units" displayname="Elevation Units" datatype="String" direction="Input" expression="elev_units" type="Required">
 				<dialogReference>
 					<para>The vertical unit of measure for the elevation values stored in the DEM (<b>Meters</b> or <b>Feet</b>).</para>
-					<para>When the DEM's spatial reference includes a Vertical Coordinate System (VCS), this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack a formal VCS even when the elevation unit is well-known; in those cases the field is left blank and a warning is shown — manual selection is required.</para>
+					<para>When the DEM's spatial reference includes a Vertical Coordinate System (VCS), this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack a formal VCS even when the elevation unit is well-known; in those cases the field is left blank and a warning is shown - manual selection is required.</para>
 					<para>The same elevation unit applies to all pieces produced by this tool.</para>
 				</dialogReference>
 				<pythonReference>
@@ -79,7 +79,7 @@
 			</param>
 			<param sync="true" name="min_detail" displayname="Minimum Detail Size (mm)" datatype="Double" direction="Input" expression="min_detail" type="Required">
 				<dialogReference>
-					<para>The smallest surface feature to preserve in the output models, in millimeters. A single target cell size is computed from this value and the global scale, then applied to every piece — ensuring consistent mesh density across the entire set. Default: 0.2 mm.</para>
+					<para>The smallest surface feature to preserve in the output models, in millimeters. A single target cell size is computed from this value and the global scale, then applied to every piece - ensuring consistent mesh density across the entire set. Default: 0.2 mm.</para>
 				</dialogReference>
 				<pythonReference>
 					<para>Smallest resolvable feature in millimeters (must be &gt; 0). Applied uniformly to all pieces.</para>
@@ -97,8 +97,8 @@
 				<dialogReference>
 					<para>Controls which elevation is mapped to the bottom of the terrain surface on each piece.</para>
 					<para><bulletList>
-						<bullet_item><b>Sea Level (0)</b> — Elevation 0 is the terrain floor for every piece. Because the datum reference is shared, pieces that cover adjacent areas will have consistent relative heights and can be physically arranged side-by-side to form a continuous landscape.</bullet_item>
-						<bullet_item><b>Minimum Elevation (per piece)</b> — Each piece's local minimum elevation is its own terrain floor. Pieces stand independently at full base thickness above their lowest terrain point but may differ in absolute model height. Use this when pieces are intended as separate standalone models rather than components of a matched set.</bullet_item>
+						<bullet_item><b>Sea Level (0)</b> - Elevation 0 is the terrain floor for every piece. Because the datum reference is shared, pieces that cover adjacent areas will have consistent relative heights and can be physically arranged side-by-side to form a continuous landscape.</bullet_item>
+						<bullet_item><b>Minimum Elevation (per piece)</b> - Each piece's local minimum elevation is its own terrain floor. Pieces stand independently at full base thickness above their lowest terrain point but may differ in absolute model height. Use this when pieces are intended as separate standalone models rather than components of a matched set.</bullet_item>
 					</bulletList></para>
 				</dialogReference>
 				<pythonReference>
@@ -109,8 +109,8 @@
 				<dialogReference>
 					<para>Controls how NoData cells at the boundary of each clipped piece are handled.</para>
 					<para><bulletList>
-						<bullet_item><b>Tight (Follows Polygon Boundary)</b> — NoData cells outside the polygon are left as void. Walls follow the actual polygon shape. Recommended for split mode because the polygon already defines the intended boundary.</bullet_item>
-						<bullet_item><b>Rectangular</b> — NoData cells are filled with the floor elevation. Each piece becomes a rectangular block aligned to the polygon's bounding box, which may overlap adjacent pieces.</bullet_item>
+						<bullet_item><b>Tight (Follows Polygon Boundary)</b> - NoData cells outside the polygon are left as void. Walls follow the actual polygon shape. Recommended for split mode because the polygon already defines the intended boundary.</bullet_item>
+						<bullet_item><b>Rectangular</b> - NoData cells are filled with the floor elevation. Each piece becomes a rectangular block aligned to the polygon's bounding box, which may overlap adjacent pieces.</bullet_item>
 					</bulletList></para>
 				</dialogReference>
 				<pythonReference>
@@ -119,11 +119,11 @@
 			</param>
 		</parameters>
 		<summary>
-			<para>Splits a DEM by a polygon feature class and converts each piece to a separate watertight binary STL file for 3D printing. A single consistent scale is applied to all pieces — chosen so the largest piece fits within the specified print-bed dimension — allowing pieces to be arranged together at the correct relative size.</para>
+			<para>Splits a DEM by a polygon feature class and converts each piece to a separate watertight binary STL file for 3D printing. A single consistent scale is applied to all pieces - chosen so the largest piece fits within the specified print-bed dimension - allowing pieces to be arranged together at the correct relative size.</para>
 		</summary>
 		<usage>
 			<para>The tool operates in two passes. First, all polygon extents are measured against the DEM extent to find the largest piece dimension, from which a global XY scale and target cell size are computed. Second, each polygon clips the DEM, the clipped piece is resampled to the target cell size, triangulated, and written as a binary STL. Polygons that do not overlap the DEM are skipped with a warning.</para>
-			<para>Choose <b>Sea Level (0)</b> for Z Floor Reference when the pieces are intended to be arranged side-by-side to form a continuous landscape — the shared datum ensures consistent relative heights across all pieces.</para>
+			<para>Choose <b>Sea Level (0)</b> for Z Floor Reference when the pieces are intended to be arranged side-by-side to form a continuous landscape - the shared datum ensures consistent relative heights across all pieces.</para>
 			<para>The <b>Name Attribute</b> field is optional. When provided, each output STL is named using the corresponding attribute value from the polygon feature class, making it easy to identify individual pieces. Invalid filename characters in the attribute value are replaced with underscores.</para>
 		</usage>
 	</tool>
