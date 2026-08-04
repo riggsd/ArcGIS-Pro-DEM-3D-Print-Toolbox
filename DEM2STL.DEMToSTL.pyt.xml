@@ -72,9 +72,9 @@
 				<dialogReference>
 					<para>Controls which elevation is mapped to the bottom of the terrain surface (the top of the base layer).</para>
 					<para><bulletList>
-						<bullet_item><b>Sea Level (0)</b> — Elevation 0 is the terrain floor. Terrain at or below sea level still appears in the model; the lowest value present sets the actual print-plate contact surface. Useful when the datum relationship matters, such as a coastal area that includes bathymetry.</bullet_item>
-						<bullet_item><b>Minimum Elevation</b> — The lowest elevation in the DEM is mapped to the terrain floor. The full base thickness sits directly beneath the lowest terrain point, maximising the visible relief of the model.</bullet_item>
-					</bulletList></para>
+							<bullet_item><b>Sea Level (0)</b> — Elevation 0 is the terrain floor. Terrain at or below sea level still appears in the model; the lowest value present sets the actual print-plate contact surface. Useful when the datum relationship matters, such as a coastal area that includes bathymetry.</bullet_item>
+							<bullet_item><b>Minimum Elevation</b> — The lowest elevation in the DEM is mapped to the terrain floor. The full base thickness sits directly beneath the lowest terrain point, maximising the visible relief of the model.</bullet_item>
+						</bulletList></para>
 				</dialogReference>
 				<pythonReference>
 					<para><code>"Sea Level (0)"</code> or <code>"Minimum Elevation"</code>.</para>
@@ -84,9 +84,9 @@
 				<dialogReference>
 					<para>Controls how NoData cells at the DEM boundary are handled.</para>
 					<para><bulletList>
-						<bullet_item><b>Tight (Follows DEM Boundary)</b> — NoData cells are left as void. Perimeter walls follow the actual data boundary of the DEM, producing a smaller, more printable model when the survey area is not rectangular.</bullet_item>
-						<bullet_item><b>Rectangular</b> — NoData cells are filled with the floor elevation, producing a flat-based rectangular block with four straight perimeter walls.</bullet_item>
-					</bulletList></para>
+							<bullet_item><b>Tight (Follows DEM Boundary)</b> — NoData cells are left as void. Perimeter walls follow the actual data boundary of the DEM, producing a smaller, more printable model when the survey area is not rectangular.</bullet_item>
+							<bullet_item><b>Rectangular</b> — NoData cells are filled with the floor elevation, producing a flat-based rectangular block with four straight perimeter walls.</bullet_item>
+						</bulletList></para>
 				</dialogReference>
 				<pythonReference>
 					<para><code>"Tight (Follows DEM Boundary)"</code> or <code>"Rectangular"</code>.</para>

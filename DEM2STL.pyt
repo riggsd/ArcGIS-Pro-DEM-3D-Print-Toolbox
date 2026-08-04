@@ -20,6 +20,23 @@ import zipfile
 from typing import Optional
 
 
+# Common filament colors, name → uppercase hex (Bambu's parser requires uppercase).
+PAINT_COLORS = {
+    "White":  "#FFFFFF",
+    "Black":  "#000000",
+    "Grey":   "#808080",
+    "Red":    "#FF0000",
+    "Orange": "#FF8000",
+    "Yellow": "#FFFF00",
+    "Green":  "#00AA00",
+    "Blue":   "#0000FF",
+    "Purple": "#800080",
+    "Brown":  "#8B4513",
+    "Pink":   "#FF69B4",
+    "Cyan":   "#00FFFF",
+}
+
+
 # =============================================================================
 # Module-level helpers shared by both tools
 # =============================================================================
@@ -258,25 +275,109 @@ def _array_to_stl(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float, out_stl:
     return _write_stl(V0, V1, V2, out_stl)
 
 
-def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str, object_name: str) -> tuple[int, int, float]:
+def _rasterize_paint_layer(paint_fc: str, snap_raster: str, arr_shape: tuple,
+                           scratch: str, buffer_map_units: Optional[float]) -> np.ndarray:
+    """Rasterize a vector paint layer to a boolean mask matching the snap raster grid.
+
+    Lines and points are pre-buffered by buffer_map_units (in the raster's map-unit CRS)
+    before rasterization; polygons are rasterized directly.  Returns a bool (nr, nc)
+    array — True where paint features are present — with the same shape as arr_shape.
+
+    arcpy.env snap/extent/cellSize are set to align output pixels exactly to the snap
+    raster, so indices correspond 1-to-1 with the resampled DEM array.  Environment
+    variables are restored on exit.
+    """
+    tmp_buf = None
+    tmp_ras = os.path.join(scratch, "dem23mf_paintras.tif")
+
+    try:
+        snap_desc  = arcpy.Describe(snap_raster)
+        shape_type = arcpy.Describe(paint_fc).shapeType
+
+        # Buffer lines and points so they have rasterizable area
+        if buffer_map_units and shape_type in ("Polyline", "Point", "Multipoint"):
+            tmp_buf = "memory/dem23mf_paintbuf"
+            if arcpy.Exists(tmp_buf):
+                arcpy.management.Delete(tmp_buf)
+            arcpy.analysis.Buffer(paint_fc, tmp_buf, buffer_map_units, dissolve_option="ALL")
+            src = tmp_buf
+        else:
+            src = paint_fc
+
+        # Save and override geoprocessing environment
+        old_snap   = arcpy.env.snapRaster
+        old_extent = arcpy.env.extent
+        old_cs     = arcpy.env.cellSize
+        old_crs    = arcpy.env.outputCoordinateSystem
+        try:
+            arcpy.env.snapRaster             = snap_raster
+            arcpy.env.extent                 = snap_desc.extent
+            arcpy.env.cellSize               = snap_desc.meanCellWidth
+            arcpy.env.outputCoordinateSystem = snap_desc.spatialReference
+
+            oid_field = arcpy.Describe(src).OIDFieldName
+            if arcpy.Exists(tmp_ras):
+                arcpy.management.Delete(tmp_ras)
+            arcpy.conversion.FeatureToRaster(src, oid_field, tmp_ras, snap_desc.meanCellWidth)
+        finally:
+            arcpy.env.snapRaster             = old_snap
+            arcpy.env.extent                 = old_extent
+            arcpy.env.cellSize               = old_cs
+            arcpy.env.outputCoordinateSystem = old_crs
+
+        # Load as boolean mask: any non-NoData cell = painted
+        paint_arr = arcpy.RasterToNumPyArray(tmp_ras, nodata_to_value=0).astype(int)
+        mask = (paint_arr != 0)
+
+        # Guard against off-by-one from raster snapping
+        nr, nc = arr_shape
+        mr, mc = mask.shape
+        if (mr, mc) != (nr, nc):
+            result = np.zeros((nr, nc), dtype=bool)
+            result[:min(nr, mr), :min(nc, mc)] = mask[:min(nr, mr), :min(nc, mc)]
+            mask = result
+
+        return mask
+
+    finally:
+        if tmp_buf:
+            try:
+                arcpy.management.Delete(tmp_buf)
+            except Exception:
+                pass
+        if arcpy.Exists(tmp_ras):
+            try:
+                arcpy.management.Delete(tmp_ras)
+            except Exception:
+                pass
+
+
+def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str,
+               object_name: str, base_color: str = "#FFFFFF",
+               tri_color_indices: Optional[np.ndarray] = None,
+               paint_colors: Optional[list] = None) -> tuple[int, int, float]:
     """Write a triangle mesh (V0/V1/V2 vertex arrays) as a standards-compliant 3MF file.
 
-    A 3MF file is an OPC (ZIP) package.  The minimum that BambuStudio needs to
-    import and slice a model is three members:
-
-        [Content_Types].xml   — declares the .rels and .model part content types
+    A 3MF file is an OPC (ZIP) package with three required members:
+        [Content_Types].xml   — declares .rels and .model content types
         _rels/.rels           — points the package root at the 3D model part
-        3D/3dmodel.model      — the model: unit, one <object> mesh, one build <item>
+        3D/3dmodel.model      — model geometry plus optional color metadata
 
-    Unlike STL's triangle soup, 3MF stores an *indexed* mesh: a list of unique
-    vertices plus triangles that reference them by index.  We weld the soup into
-    that form with np.unique — coincident corners are bit-identical (see
-    _build_mesh), so the result is a fully closed, manifold, single-shell mesh.
+    Unlike STL's triangle soup, 3MF uses an *indexed* mesh: a shared vertex list
+    plus triangles referencing vertices by index.  Coincident vertices are
+    bit-identical (see _build_mesh), so np.unique produces a fully-welded manifold.
 
-    Coordinates are written in millimetres (the model's declared unit), matching
-    the model space produced upstream — no transform is needed on the build item.
-    Triangle winding is counter-clockwise / outward-normal, which is the 3MF
-    core-spec orientation, so no per-triangle normals are stored.
+    Color support (3MF Materials and Properties extension, namespace "m"):
+        base_color        — hex color (#RRGGBB) assigned to the whole object.  Always
+                            emitted; BambuStudio 1.9+ maps this to an AMS filament slot
+                            via its "Standard 3MF Color Parsing" dialog.
+        tri_color_indices — optional int array length total_tris; 0 = base_color,
+                            1..N index into paint_colors.  Non-zero terrain triangles
+                            receive a per-triangle color override; walls and bottom
+                            always use index 0 (base_color).
+        paint_colors      — list of N hex strings matching indices 1..N.
+
+    Uppercase hex digits are required — Bambu's parser silently drops lowercase.
 
     Returns (total_triangles, vertex_count, file_size_mb).
     """
@@ -290,23 +391,63 @@ def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str, obj
     tris = np.stack([inv[:total_tris], inv[total_tris:2 * total_tris], inv[2 * total_tris:]], axis=1)
     vert_count = len(verts)
 
-    # ── Assemble the 3D/3dmodel.model XML ────────────────────────────────────
+    safe_name = (object_name or "DEM").replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
+
+    # ── Vertex XML ───────────────────────────────────────────────────────────
     vert_xml = "".join(
         '<vertex x="%.4f" y="%.4f" z="%.4f"/>' % (x, y, z) for x, y, z in verts
     )
-    tri_xml = "".join(
-        '<triangle v1="%d" v2="%d" v3="%d"/>' % (a, b, c) for a, b, c in tris
-    )
-    safe_name = (object_name or "DEM").replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
+
+    # ── Triangle XML ─────────────────────────────────────────────────────────
+    # Painted triangles carry an explicit pid/p1 index; unpainted triangles
+    # inherit the object-level default (index 0 = base_color).
+    use_multicolor = tri_color_indices is not None and paint_colors
+    mat_ns = ' xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02"'
+
+    if use_multicolor:
+        indices = tri_color_indices
+        tri_xml = "".join(
+            ('<triangle v1="%d" v2="%d" v3="%d" pid="2" p1="%d"/>' %
+             (int(tris[k, 0]), int(tris[k, 1]), int(tris[k, 2]), int(indices[k]))
+             if indices[k] > 0
+             else '<triangle v1="%d" v2="%d" v3="%d"/>' %
+             (int(tris[k, 0]), int(tris[k, 1]), int(tris[k, 2])))
+            for k in range(total_tris)
+        )
+    else:
+        tri_xml = "".join(
+            '<triangle v1="%d" v2="%d" v3="%d"/>' % (a, b, c) for a, b, c in tris
+        )
+
+    # ── Assemble the 3D/3dmodel.model XML ────────────────────────────────────
+    # The 3MF Materials extension (xmlns:m) is always included so the model
+    # carries a base color.  When paint_colors is provided, one entry per layer
+    # is appended after the base color entry.
+    if use_multicolor:
+        color_entries = '<m:color color="' + base_color + '"/>'
+        for pc in paint_colors:
+            color_entries += '<m:color color="' + pc + '"/>'
+        color_group_xml = '<m:colorgroup id="2">' + color_entries + '</m:colorgroup>'
+    else:
+        color_group_xml = (
+            '<m:colorgroup id="2">'
+            '<m:color color="' + base_color + '"/>'
+            '</m:colorgroup>'
+        )
+
+    # Object inherits base color from the group; individual tris may override.
+    obj_attrs = ' pid="2" p1="0"'
 
     model_xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\r\n'
         '<model unit="millimeter" xml:lang="en-US"'
-        ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">'
+        ' xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"'
+        + mat_ns + '>'
         '<metadata name="Application">DEM to 3MF | ArcGIS Pro Python Toolbox</metadata>'
         '<metadata name="Title">' + safe_name + '</metadata>'
         '<resources>'
-        '<object id="1" type="model" name="' + safe_name + '">'
+        + color_group_xml +
+        '<object id="1" type="model" name="' + safe_name + '"' + obj_attrs + '>'
         '<mesh>'
         '<vertices>' + vert_xml + '</vertices>'
         '<triangles>' + tri_xml + '</triangles>'
@@ -317,6 +458,7 @@ def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str, obj
         '</model>'
     )
 
+    # ── OPC package ──────────────────────────────────────────────────────────
     content_types = (
         '<?xml version="1.0" encoding="UTF-8"?>\r\n'
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -343,14 +485,43 @@ def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str, obj
 
 
 def _array_to_3mf(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float, out_3mf: str,
-                  object_name: str) -> tuple[int, int, float]:
+                  object_name: str, quad_paint_masks: Optional[list] = None,
+                  base_color: str = "#FFFFFF",
+                  paint_colors: Optional[list] = None) -> tuple[int, int, float]:
     """Build a watertight mesh from an elevation array and write it as a 3MF file.
 
     Convenience wrapper: _build_mesh followed by _write_3mf.
+
+    quad_paint_masks : optional list of bool (nr-1, nc-1) arrays, one per paint layer.
+                       Layers are applied in order; later entries win on overlap.
+                       Walls and bottom always use base_color.  When None or empty,
+                       the model is written in base_color only.
+    paint_colors     : list of hex strings (#RRGGBB), one per entry in quad_paint_masks.
+
     Returns (total_triangles, vertex_count, file_size_mb).
     """
     V0, V1, V2 = _build_mesh(z_mm, cell_mm_w, cell_mm_h)
-    return _write_3mf(V0, V1, V2, out_3mf, object_name)
+
+    tri_color_indices = None
+    if quad_paint_masks and paint_colors:
+        # valid_cell mirrors the quad validity check in _build_mesh.
+        valid_cell = (
+            ~np.isnan(z_mm[:-1, :-1]) & ~np.isnan(z_mm[:-1, 1:]) &
+            ~np.isnan(z_mm[1:,  :-1]) & ~np.isnan(z_mm[1:,  1:])
+        )
+        total_tris        = len(V0)
+        n_terrain         = 2 * int(valid_cell.sum())   # two tris per valid quad
+        tri_color_indices = np.zeros(total_tris, dtype=np.int32)
+        # Apply each paint layer in order; later layers win on overlap.
+        # _build_mesh lays out terrain tris as [all Tri1s, all Tri2s] — np.tile
+        # replicates the per-quad mask into both halves correctly.
+        for k, qmask in enumerate(quad_paint_masks, start=1):
+            quad_colors = qmask[valid_cell]
+            layer_tris  = np.tile(quad_colors, 2)
+            tri_color_indices[:n_terrain][layer_tris] = k
+
+    return _write_3mf(V0, V1, V2, out_3mf, object_name, base_color,
+                      tri_color_indices, paint_colors)
 
 
 # =============================================================================
@@ -1130,12 +1301,20 @@ class DEMTo3MF(object):
     Only the output container differs: STL writes a binary triangle soup, while
     this tool writes a standards-compliant 3MF (an OPC/ZIP package holding an
     indexed, welded, manifold mesh in 3D/3dmodel.model), which imports directly
-    into BambuStudio for printing on a Bamboo Lab printer.
+    into BambuStudio for printing on a Bambu Lab printer.
 
-    No extra parameters are required over the STL tool: 3MF's mandatory pieces —
-    a declared unit, one mesh object, and a build item — are all derivable. The
-    model space is already in millimetres (3MF's declared unit) and the object
-    name is taken from the output filename.
+    Multicolor support (optional):
+        A Paint Layer (polygon, polyline, or point feature class) can be draped onto
+        the terrain surface.  The tool rasterizes the layer onto the same grid as the
+        resampled DEM, then assigns the paint color to every terrain triangle whose
+        quad overlaps the paint features.  Lines and points are pre-buffered to give
+        them area on the raster grid.  Wall and bottom triangles always use the base
+        color.
+
+        Colors are written using the 3MF Materials and Properties extension
+        (xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02").
+        BambuStudio 1.9+ imports them via its "Standard 3MF Color Parsing" dialog,
+        which maps each color group to an AMS filament slot.
 
     See DEMToSTL for the full workflow, footprint-mode, and coordinate-system
     documentation.
@@ -1146,10 +1325,9 @@ class DEMTo3MF(object):
         self.description = (
             "Converts a Digital Elevation Model (DEM) raster to a watertight, standards-"
             "compliant 3MF file suitable for slicing and 3-D printing (e.g. in BambuStudio). "
-            "The model is scaled to fit a specified print-bed size with configurable vertical "
-            "exaggeration, minimum detail size (controls mesh density), and solid base "
-            "thickness. Geometry is identical to the DEM to STL tool; only the output "
-            "format differs."
+            "Supports optional per-triangle multicolor painting by draping a vector feature "
+            "layer onto the terrain surface.  Colors are encoded using the 3MF Materials "
+            "extension and imported by BambuStudio via its Standard 3MF Color Parsing dialog."
         )
         self.canRunInBackground = False
 
@@ -1251,7 +1429,41 @@ class DEMTo3MF(object):
         p8.filter.list = ["Tight (Follows DEM Boundary)", "Rectangular"]
         p8.value = "Tight (Follows DEM Boundary)"
 
-        return [p0, p1, p2, p3, p4, p5, p6, p7, p8]
+        # ── Colors group ─────────────────────────────────────────────────────
+
+        # 9 — Base Color (whole-model default; always written to the 3MF color group)
+        p9 = arcpy.Parameter(
+            displayName="Base Color",
+            name="base_color",
+            datatype="GPString",
+            parameterType="Optional",
+            direction="Input",
+            category="Colors",
+        )
+        p9.filter.type = "ValueList"
+        p9.filter.list = list(PAINT_COLORS.keys())
+        p9.value = "White"
+
+        # 10 — Paint Layers (value table: one row per paint layer)
+        # Columns: Layer (feature class draped onto terrain), Color (named color),
+        # Width mm (buffer radius for Line/Point layers; ignored for Polygon layers).
+        p10 = arcpy.Parameter(
+            displayName="Paint Layers",
+            name="paint_layers",
+            datatype="GPValueTable",
+            parameterType="Optional",
+            direction="Input",
+            category="Colors",
+        )
+        p10.columns = [
+            ["GPFeatureLayer", "Layer"],
+            ["GPString",       "Color"],
+            ["GPDouble",       "Width (mm)"],
+        ]
+        p10.filters[1].type = "ValueList"
+        p10.filters[1].list = list(PAINT_COLORS.keys())
+
+        return [p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10]
 
     # ------------------------------------------------------------------
     def isLicensed(self):
@@ -1299,20 +1511,37 @@ class DEMTo3MF(object):
     # ------------------------------------------------------------------
     def execute(self, parameters, messages):
 
-        in_dem         = parameters[0].valueAsText
-        elev_units     = parameters[1].valueAsText
-        out_3mf        = parameters[2].valueAsText
-        max_bed        = float(parameters[3].value)
-        vert_exag      = float(parameters[4].value)
-        min_detail     = float(parameters[5].value)
-        base_thick     = float(parameters[6].value)
-        z_floor_mode   = parameters[7].valueAsText
-        footprint_mode = parameters[8].valueAsText
+        in_dem          = parameters[0].valueAsText
+        elev_units      = parameters[1].valueAsText
+        out_3mf         = parameters[2].valueAsText
+        max_bed         = float(parameters[3].value)
+        vert_exag       = float(parameters[4].value)
+        min_detail      = float(parameters[5].value)
+        base_thick      = float(parameters[6].value)
+        z_floor_mode    = parameters[7].valueAsText
+        footprint_mode  = parameters[8].valueAsText
+        base_color_name = parameters[9].valueAsText   # e.g. "White"
+
+        # Parse the Paint Layers value table.
+        # Each row: [GPFeatureLayer, GPString color name, GPDouble width mm]
+        paint_layer_entries = []   # list of (layer_path, color_name, color_hex, width_mm)
+        vtab = parameters[10]
+        if vtab.value:
+            for row in vtab.value:
+                layer_path = str(row[0]) if row[0] is not None else None
+                if not layer_path:
+                    continue
+                color_name = str(row[1]) if row[1] is not None else list(PAINT_COLORS.keys())[0]
+                color_hex  = PAINT_COLORS.get(color_name, "#FF0000")
+                width_mm   = float(row[2]) if row[2] else 1.0
+                paint_layer_entries.append((layer_path, color_name, color_hex, width_mm))
 
         tight = (footprint_mode == "Tight (Follows DEM Boundary)")
 
         if not out_3mf.lower().endswith(".3mf"):
             out_3mf += ".3mf"
+
+        base_color_hex = PAINT_COLORS.get(base_color_name or "White", "#FFFFFF")
 
         # ── Step 1/6 — Describe DEM ──────────────────────────────────────────
         messages.addMessage("Step 1/6 — Analyzing input DEM...")
@@ -1365,6 +1594,9 @@ class DEMTo3MF(object):
         scratch    = arcpy.env.scratchFolder or tempfile.gettempdir()
         tmp_raster = os.path.join(scratch, "dem23mf_resampled.tif")
 
+        quad_paint_masks  = []   # list of bool (nr-1, nc-1) arrays, one per layer
+        paint_colors_hex  = []   # parallel list of hex strings
+        paint_layer_names = []   # parallel list of display names (for final summary)
         try:
             arcpy.management.Resample(
                 in_raster=in_dem,
@@ -1376,6 +1608,49 @@ class DEMTo3MF(object):
             # ── Step 4/6 — Load into NumPy ───────────────────────────────────
             messages.addMessage("Step 4/6 — Loading raster into memory...")
             arr = _load_raster_array(tmp_raster)
+
+            # Rasterize each paint layer while the snap raster still exists on disk.
+            # _rasterize_paint_layer aligns its output to tmp_raster's grid exactly,
+            # so the resulting boolean mask indexes 1-to-1 with arr.
+            if paint_layer_entries:
+                n = len(paint_layer_entries)
+                messages.addMessage(f"  Rasterizing {n} paint layer(s)...")
+                total_quads = (arr.shape[0] - 1) * (arr.shape[1] - 1)
+                for i, (layer_path, color_name, color_hex, width_mm) in enumerate(paint_layer_entries):
+                    try:
+                        shape_type = arcpy.Describe(layer_path).shapeType
+                    except Exception:
+                        shape_type = ""
+                    buf_units = None
+                    if shape_type in ("Polyline", "Point", "Multipoint") and width_mm > 0:
+                        buf_units = (width_mm / 2.0) / xy_scale
+                    layer_basename = os.path.basename(str(layer_path))
+                    buf_info = f", {width_mm:.4g} mm buffer" if buf_units else ""
+                    messages.addMessage(
+                        f"  Layer {i+1}/{n}: {layer_basename}"
+                        f"  ({shape_type or 'Unknown'} → {color_name}{buf_info})"
+                    )
+                    paint_grid = _rasterize_paint_layer(
+                        layer_path, tmp_raster, arr.shape, scratch, buf_units
+                    )
+                    messages.addMessage(f"    Paint cells : {int(paint_grid.sum()):,} of {paint_grid.size:,}")
+                    quad_mask = (
+                        paint_grid[:-1, :-1] | paint_grid[:-1, 1:] |
+                        paint_grid[1:,  :-1] | paint_grid[1:,  1:]
+                    )
+                    painted_quads = int(quad_mask.sum())
+                    messages.addMessage(
+                        f"    Paint quads : {painted_quads:,} of {total_quads:,}"
+                        f"  ({painted_quads * 2:,} terrain triangles)"
+                    )
+                    if painted_quads > 0:
+                        quad_paint_masks.append(quad_mask)
+                        paint_colors_hex.append(color_hex)
+                        paint_layer_names.append(layer_basename)
+                    else:
+                        messages.addWarningMessage(
+                            f"    Layer {i+1} produced no painted quads — skipping."
+                        )
 
         finally:
             if arcpy.Exists(tmp_raster):
@@ -1422,13 +1697,27 @@ class DEMTo3MF(object):
         # ── Step 6/6 — Build mesh and write 3MF ──────────────────────────────
         messages.addMessage(f"Step 6/6 — Building mesh and writing 3MF: {out_3mf}")
         object_name = os.path.splitext(os.path.basename(out_3mf))[0]
-        total_tris, vert_count, fsize_mb = _array_to_3mf(z_mm, cell_mm_w, cell_mm_h, out_3mf, object_name)
+        total_tris, vert_count, fsize_mb = _array_to_3mf(
+            z_mm, cell_mm_w, cell_mm_h, out_3mf, object_name,
+            quad_paint_masks or None,
+            base_color_hex,
+            paint_colors_hex or None,
+        )
 
         messages.addMessage("")
         messages.addMessage("✓  3MF written successfully!")
         messages.addMessage(f"  Model dimensions : {model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.2f} mm  (W x D x H)")
         messages.addMessage(f"  Vertices         : {vert_count:,}")
         messages.addMessage(f"  Triangles        : {total_tris:,}")
+        if paint_layer_names:
+            messages.addMessage(f"  Base color       : {base_color_name}")
+            layer_parts = []
+            for name, hex_val in zip(paint_layer_names, paint_colors_hex):
+                cname = next((k for k, v in PAINT_COLORS.items() if v == hex_val), hex_val)
+                layer_parts.append(f"{name} ({cname})")
+            messages.addMessage(f"  Paint layers     : {', '.join(layer_parts)}")
+        else:
+            messages.addMessage(f"  Color            : {base_color_name}")
         messages.addMessage(f"  File size        : {fsize_mb:.2f} MB")
         messages.addMessage(f"  Output           : {out_3mf}")
 
