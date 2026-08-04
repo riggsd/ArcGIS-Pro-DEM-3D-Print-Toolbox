@@ -1,10 +1,12 @@
-# DEM to STL Toolbox
+# DEM to STL / 3MF Toolbox
 
-An ArcGIS Pro Python Toolbox (`.pyt`) that converts Digital Elevation Model rasters to binary STL files for 3D printing.
+An ArcGIS Pro Python Toolbox (`.pyt`) that converts Digital Elevation Model rasters to 3D-printable mesh files.
 
 **Tools**
 - [DEM to STL](#dem-to-stl) — converts a single DEM to one STL file
 - [Split DEM to STL](#split-dem-to-stl) — divides a DEM by a polygon feature class and produces a separate STL file for each piece at a consistent scale
+- [DEM to 3MF](#dem-to-3mf) — converts a single DEM to one 3MF file, with optional multicolor paint layers
+- [Split DEM to 3MF]() - TODO
 
 **Requirements:** ArcGIS Pro 3.x with a Standard or Advanced license. No Spatial Analyst extension required.
 
@@ -16,15 +18,17 @@ An ArcGIS Pro Python Toolbox (`.pyt`) that converts Digital Elevation Model rast
 
 Many DEMs store elevation in feet while their horizontal coordinate system uses meters (e.g., UTM with NAVD 88 feet). If the tool treated the Z values as meters it would introduce an unintended ~3.28x vertical exaggeration. The **Elevation Units** parameter corrects this by applying the appropriate conversion factor before scaling.
 
-When a DEM's spatial reference includes a Vertical Coordinate System (VCS), the elevation unit is auto-detected on input. Most real-world DEMs do not carry a formal VCS; in those cases the field is left blank and must be set manually. The default when no value is to assume Z units are the same as X and Y units.
-
-### Output Format
-
-Both tools write standard binary STL files compatible with any 3D printing slicer. The mesh is fully watertight: terrain surface, perimeter walls, and a flat bottom are all closed with consistent outward-facing normals.
+When a DEM's spatial reference includes a Vertical Coordinate System (VCS), the elevation unit is auto-detected on input. Most real-world DEMs do not carry a formal VCS; in those cases the field is left blank and must be set manually. When no value is provided the tool assumes Z units are the same as X and Y units.
 
 ### Mesh Density
 
 The DEM is resampled to a target resolution *before* triangulation. This means triangle count is proportional to the chosen **Minimum Detail Size**, not the raw DEM resolution, so even high-resolution DEMs produce a manageable file at print scale.
+
+### Output Formats
+
+**STL** is a simple triangle mesh format compatible with any 3D printing slicer. The mesh is fully watertight: terrain surface, perimeter walls, and a flat bottom are all closed with consistent outward-facing normals.
+
+**3MF** is a richer format (an OPC/ZIP archive) that carries color metadata in addition to geometry. The mesh produced by DEM to 3MF is geometrically identical to DEM to STL given the same inputs; only the container differs. 3MF is the format required for multicolor printing in BambuStudio.
 
 ---
 
@@ -45,6 +49,44 @@ Converts a single DEM raster to one STL file. The model is scaled so its longest
 | **Base Thickness (mm)** | 3.0 | Thickness of the solid flat base beneath the lowest terrain point. A minimum of 1–2 mm is recommended to prevent warping during printing. |
 | **Z Floor Reference** | Sea Level (0) | Which elevation maps to the bottom of the terrain surface (the top of the base layer). **Sea Level (0)** maps elevation 0 to the terrain floor — useful when the datum relationship matters or the area includes below-sea-level terrain. **Minimum Elevation** maps the lowest cell in the DEM to the floor, maximizing visible relief. |
 | **Model Footprint** | Tight (Follows DEM Boundary) | How non-rectangular DEM boundaries are handled. **Tight** leaves NoData cells as void and traces walls along the actual data boundary. **Rectangular** fills NoData cells with the floor elevation, producing a flat-based rectangular block. |
+
+---
+
+## DEM to 3MF
+
+Converts a single DEM raster to one 3MF file importable directly into BambuStudio. Supports optional multicolor printing by draping one or more vector paint layers onto the terrain surface.
+
+The geometry produced is identical to DEM to STL — the same DEM with the same settings yields the same mesh. 3MF is required when using BambuStudio's AMS multicolor workflow.
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| **Input DEM** | — | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
+| **Elevation Units** | *(auto-detect)* | Vertical unit of the elevation values: Meters or Feet. See the [General Notes](#elevation-units-and-vertical-exaggeration) above. |
+| **Output 3MF File** | — | Output path for the 3MF file. The `.3mf` extension is added if omitted. |
+| **Maximum Print-Bed Dimension (mm)** | 180 | Longest dimension of the printer's build plate in millimeters. The model's longest horizontal axis is scaled to fit this value. |
+| **Vertical Exaggeration Factor** | 1.0 | Multiplier applied to terrain relief after unit conversion. Use 1.0 for a geometrically accurate model. Does not affect base thickness. |
+| **Minimum Detail Size (mm)** | 0.2 | Smallest surface feature to resolve, in millimeters. Controls the resampling resolution before triangulation. |
+| **Base Thickness (mm)** | 3.0 | Thickness of the solid flat base beneath the lowest terrain point, in millimeters. |
+| **Z Floor Reference** | Sea Level (0) | **Sea Level (0)** maps elevation 0 to the terrain floor. **Minimum Elevation** maps the lowest DEM cell to the floor, maximizing visible relief. |
+| **Model Footprint** | Tight (Follows DEM Boundary) | **Tight** traces walls along the actual DEM data boundary. **Rectangular** fills NoData cells with the floor elevation, producing a rectangular block. |
+| **Base Color** | White | The filament color applied to the entire model by default, including all walls and the base. Mapped to the first AMS slot when the file is opened in BambuStudio. |
+| **Paint Layers** | *(optional)* | One or more vector layers to drape onto the terrain. Each row in the table defines one paint layer — see [Paint Layers](#paint-layers) below. |
+
+### Paint Layers
+
+The **Paint Layers** value table assigns colors to terrain triangles based on overlap with vector feature classes. Each row has three columns:
+
+| Column | Description |
+|--------|-------------|
+| **Layer** | A polygon, polyline, or point feature class. May be in a different coordinate system from the DEM — ArcGIS reprojects it automatically. |
+| **Color** | The filament color to assign to terrain triangles covered by this layer. The same color may appear in multiple rows. |
+| **Width (mm)** | Buffer width in millimeters (model space) applied before rasterization when the layer contains line or point geometry. Ignored for polygon layers. Defaults to 1.0 mm at execution time if left blank. |
+
+When multiple paint layers overlap the same terrain area, the last row in the table wins. Rows that produce no painted terrain triangles after rasterization are skipped with a warning.
+
+Colors are encoded using the 3MF Materials and Properties extension. When the file is opened in BambuStudio 1.9 or later, the Standard 3MF Color Parsing dialog appears and lets you assign each color group to a loaded AMS filament slot.
 
 ---
 
