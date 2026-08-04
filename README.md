@@ -3,9 +3,9 @@
 An ArcGIS Pro Python Toolbox (`.pyt`) that converts Digital Elevation Model rasters to 3D-printable mesh files.
 
 **Tools**
-- [DEM to STL](#dem-to-stl) — converts a single DEM to one STL file
-- [Split DEM to STL](#split-dem-to-stl) — divides a DEM by a polygon feature class and produces a separate STL file for each piece at a consistent scale
-- [DEM to 3MF](#dem-to-3mf) — converts a single DEM to one 3MF file, with optional multicolor paint layers
+- [DEM to STL](#dem-to-stl) - converts a single DEM to one STL file
+- [Split DEM to STL](#split-dem-to-stl) - divides a DEM by a polygon feature class and produces a separate STL file for each piece at a consistent scale
+- [DEM to 3MF](#dem-to-3mf) - converts a single DEM to one 3MF file, with optional multicolor paint layers
 - [Split DEM to 3MF]() - TODO
 
 **Requirements:** ArcGIS Pro 3.x with a Standard or Advanced license. No Spatial Analyst extension required.
@@ -40,14 +40,14 @@ Converts a single DEM raster to one STL file. The model is scaled so its longest
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| **Input DEM** | — | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
+| **Input DEM** | - | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
 | **Elevation Units** | *(auto-detect)* | Vertical unit of the elevation values: Meters or Feet. Auto-detected from the DEM's Vertical Coordinate System when available; otherwise left blank and must be set manually. |
-| **Output STL File** | — | Output path for the binary STL file. The `.stl` extension is added if omitted. |
+| **Output STL File** | - | Output path for the binary STL file. The `.stl` extension is added if omitted. |
 | **Maximum Print-Bed Dimension (mm)** | 180 | Longest dimension of the printer's build plate in millimeters. The model is uniformly scaled so its longest horizontal axis equals this value. |
 | **Vertical Exaggeration Factor** | 1.0 | Multiplier applied to terrain relief after unit conversion. Use 1.0 for a geometrically accurate model. Higher values amplify relief, which is useful for flat terrain. Does not affect base thickness. |
 | **Minimum Detail Size (mm)** | 0.2 | Smallest surface feature to resolve, in millimeters. Controls the resampling resolution before triangulation. Smaller values produce more triangles and larger files. The cell size is never made finer than the DEM's native resolution. |
 | **Base Thickness (mm)** | 3.0 | Thickness of the solid flat base beneath the lowest terrain point. A minimum of 1–2 mm is recommended to prevent warping during printing. |
-| **Z Floor Reference** | Sea Level (0) | Which elevation maps to the bottom of the terrain surface (the top of the base layer). **Sea Level (0)** maps elevation 0 to the terrain floor — useful when the datum relationship matters or the area includes below-sea-level terrain. **Minimum Elevation** maps the lowest cell in the DEM to the floor, maximizing visible relief. |
+| **Z Floor Reference** | Sea Level (0) | Which elevation maps to the bottom of the terrain surface (the top of the base layer). **Sea Level (0)** maps elevation 0 to the terrain floor - useful when the datum relationship matters or the area includes below-sea-level terrain. **Minimum Elevation** maps the lowest cell in the DEM to the floor, maximizing visible relief. |
 | **Model Footprint** | Tight (Follows DEM Boundary) | How non-rectangular DEM boundaries are handled. **Tight** leaves NoData cells as void and traces walls along the actual data boundary. **Rectangular** fills NoData cells with the floor elevation, producing a flat-based rectangular block. |
 
 ---
@@ -56,15 +56,15 @@ Converts a single DEM raster to one STL file. The model is scaled so its longest
 
 Converts a single DEM raster to one 3MF file importable directly into BambuStudio. Supports optional multicolor printing by draping one or more vector paint layers onto the terrain surface.
 
-The geometry produced is identical to DEM to STL — the same DEM with the same settings yields the same mesh. 3MF is required when using BambuStudio's AMS multicolor workflow.
+The geometry produced is identical to DEM to STL - the same DEM with the same settings yields the same mesh. 3MF is required when using BambuStudio's AMS multicolor workflow.
 
 ### Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| **Input DEM** | — | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
+| **Input DEM** | - | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
 | **Elevation Units** | *(auto-detect)* | Vertical unit of the elevation values: Meters or Feet. See the [General Notes](#elevation-units-and-vertical-exaggeration) above. |
-| **Output 3MF File** | — | Output path for the 3MF file. The `.3mf` extension is added if omitted. |
+| **Output 3MF File** | - | Output path for the 3MF file. The `.3mf` extension is added if omitted. |
 | **Maximum Print-Bed Dimension (mm)** | 180 | Longest dimension of the printer's build plate in millimeters. The model's longest horizontal axis is scaled to fit this value. |
 | **Vertical Exaggeration Factor** | 1.0 | Multiplier applied to terrain relief after unit conversion. Use 1.0 for a geometrically accurate model. Does not affect base thickness. |
 | **Minimum Detail Size (mm)** | 0.2 | Smallest surface feature to resolve, in millimeters. Controls the resampling resolution before triangulation. |
@@ -72,7 +72,7 @@ The geometry produced is identical to DEM to STL — the same DEM with the same 
 | **Z Floor Reference** | Sea Level (0) | **Sea Level (0)** maps elevation 0 to the terrain floor. **Minimum Elevation** maps the lowest DEM cell to the floor, maximizing visible relief. |
 | **Model Footprint** | Tight (Follows DEM Boundary) | **Tight** traces walls along the actual DEM data boundary. **Rectangular** fills NoData cells with the floor elevation, producing a rectangular block. |
 | **Base Color** | White | The filament color applied to the entire model by default, including all walls and the base. Mapped to the first AMS slot when the file is opened in BambuStudio. |
-| **Paint Layers** | *(optional)* | One or more vector layers to drape onto the terrain. Each row in the table defines one paint layer — see [Paint Layers](#paint-layers) below. |
+| **Paint Layers** | *(optional)* | One or more vector layers to drape onto the terrain. Each row in the table defines one paint layer - see [Paint Layers](#paint-layers) below. |
 
 ### Paint Layers
 
@@ -80,7 +80,7 @@ The **Paint Layers** value table assigns colors to terrain triangles based on ov
 
 | Column | Description |
 |--------|-------------|
-| **Layer** | A polygon, polyline, or point feature class. May be in a different coordinate system from the DEM — ArcGIS reprojects it automatically. |
+| **Layer** | A polygon, polyline, or point feature class. May be in a different coordinate system from the DEM - ArcGIS reprojects it automatically. |
 | **Color** | The filament color to assign to terrain triangles covered by this layer. The same color may appear in multiple rows. |
 | **Width (mm)** | Buffer width in millimeters (model space) applied before rasterization when the layer contains line or point geometry. Ignored for polygon layers. Defaults to 1.0 mm at execution time if left blank. |
 
@@ -100,17 +100,17 @@ Polygons that do not overlap the DEM extent are skipped with a warning. Processi
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| **Input DEM** | — | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
+| **Input DEM** | - | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
 | **Elevation Units** | *(auto-detect)* | Vertical unit of the elevation values: Meters or Feet. Applied consistently to all output pieces. See the [General Notes](#elevation-units-and-vertical-exaggeration) above. |
-| **Split Polygon Feature Class** | — | Polygon feature class whose features define the DEM pieces to produce. One STL file is generated per feature that overlaps the DEM. The feature class may be in a different coordinate system from the DEM. |
+| **Split Polygon Feature Class** | - | Polygon feature class whose features define the DEM pieces to produce. One STL file is generated per feature that overlaps the DEM. The feature class may be in a different coordinate system from the DEM. |
 | **Name Attribute** | *(optional)* | A field from the polygon feature class whose values are appended to the Output Base Name to form each filename (e.g., `Region_ValleyFloor.stl`). Characters invalid in filenames are replaced with underscores. If omitted, pieces are numbered sequentially (`Region_1.stl`, `Region_2.stl`, …). |
-| **Output Folder** | — | Folder where all STL files are written. Created automatically if it does not exist. |
-| **Output Base Name** | — | Filename prefix for all output files. Each file is named `<Base Name>_<piece name or number>.stl`. |
+| **Output Folder** | - | Folder where all STL files are written. Created automatically if it does not exist. |
+| **Output Base Name** | - | Filename prefix for all output files. Each file is named `<Base Name>_<piece name or number>.stl`. |
 | **Maximum Print-Bed Dimension (mm)** | 180 | Longest build-plate dimension in millimeters. The largest polygon piece is scaled to fit this dimension; all other pieces use the same scale and print proportionally smaller. |
 | **Vertical Exaggeration Factor** | 1.0 | Relief multiplier applied consistently to every piece. |
 | **Minimum Detail Size (mm)** | 0.2 | Smallest surface feature to resolve, in millimeters. A single target cell size is derived from this value and applied to all pieces, ensuring consistent mesh density across the set. |
 | **Base Thickness (mm)** | 3.0 | Solid base thickness beneath each piece's terrain floor, in millimeters. Applied to every piece. |
-| **Z Floor Reference** | Sea Level (0) | Controls the terrain floor elevation for each piece. **Sea Level (0)** uses elevation 0 as the floor for every piece — because the datum reference is shared, adjacent pieces will have consistent relative heights and can be arranged side-by-side to form a continuous landscape. **Minimum Elevation (per piece)** uses each piece's own local minimum as its floor; pieces stand independently but may differ in absolute model height. |
+| **Z Floor Reference** | Sea Level (0) | Controls the terrain floor elevation for each piece. **Sea Level (0)** uses elevation 0 as the floor for every piece - because the datum reference is shared, adjacent pieces will have consistent relative heights and can be arranged side-by-side to form a continuous landscape. **Minimum Elevation (per piece)** uses each piece's own local minimum as its floor; pieces stand independently but may differ in absolute model height. |
 | **Model Footprint** | Tight (Follows Polygon Boundary) | How the clipped boundary of each piece is handled. **Tight** traces walls along the actual polygon boundary and is recommended for split mode. **Rectangular** fills areas outside the polygon with the floor elevation, producing a rectangular block aligned to the polygon's bounding box. |
 
 
