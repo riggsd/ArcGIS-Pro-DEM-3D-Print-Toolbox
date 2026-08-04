@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# DEM2STL.pyt  —  ArcGIS Pro Python Toolbox
+# DEM2STL.pyt  -  ArcGIS Pro Python Toolbox
 # Converts a Digital Elevation Model raster to a mesh file suitable for 3D printing.
 #
 # Tools:
@@ -85,7 +85,7 @@ def _load_raster_array(raster_path: str) -> np.ndarray:
 def _build_mesh(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Build a watertight triangle mesh from a z_mm elevation array.
 
-    Returns three float64 (N, 3) arrays (V0, V1, V2) — the first, second, and
+    Returns three float64 (N, 3) arrays (V0, V1, V2) - the first, second, and
     third vertex of each of the N triangles, in that order.  Winding is
     counter-clockwise as seen from outside the solid, so the right-hand-rule
     normal points outward.  This convention is exactly what both binary STL and
@@ -98,7 +98,7 @@ def _build_mesh(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float) -> tuple[n
     cell_mm_w / cell_mm_h : vertex spacing in mm (X / Y axes respectively).
 
     Because every shared grid corner is computed from the same X_grid/Y_grid/Z_grid
-    entry, coincident vertices are bit-identical across triangles — so a downstream
+    entry, coincident vertices are bit-identical across triangles - so a downstream
     writer can weld them into an indexed manifold mesh with an exact (round-free)
     np.unique.
     """
@@ -199,10 +199,10 @@ def _build_mesh(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float) -> tuple[n
     _ew_wall(need_w, lambda j: j,     plus_x=False)
     _ew_wall(need_e, lambda j: j + 1, plus_x=True)
 
-    # ── Bottom face — Z=0, outward normal -Z ────────────────────────────────
+    # ── Bottom face - Z=0, outward normal -Z ────────────────────────────────
     # Mirrors the terrain: same valid quads, same XY positions, all Z=0,
     # reversed winding. Every wall-bottom edge is shared by exactly one
-    # bottom triangle — no T-junctions, fully manifold.
+    # bottom triangle - no T-junctions, fully manifold.
     #
     # Winding (reversed from terrain → outward -Z normal):
     #   Tri1: A, C, D   (NW→SE→SW)   n_z = −cw·ch < 0 ✓
@@ -231,7 +231,7 @@ def _write_stl(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_stl: str) -> 
         vertex 0 : 3 x float32  (12 bytes)
         vertex 1 : 3 x float32  (12 bytes)
         vertex 2 : 3 x float32  (12 bytes)
-        attribute: uint16       ( 2 bytes) — always 0
+        attribute: uint16       ( 2 bytes) - always 0
     """
     V0 = V0.astype(np.float32)
     V1 = V1.astype(np.float32)
@@ -280,14 +280,17 @@ def _rasterize_paint_layer(paint_fc: str, snap_raster: str, arr_shape: tuple,
     """Rasterize a vector paint layer to a boolean mask matching the snap raster grid.
 
     Lines and points are pre-buffered by buffer_map_units (in the raster's map-unit CRS)
-    before rasterization; polygons are rasterized directly.  Returns a bool (nr, nc)
-    array — True where paint features are present — with the same shape as arr_shape.
+    before rasterization.  Polygons are rasterized directly when buffer_map_units is None;
+    when buffer_map_units is provided, only a band of that width along the polygon boundary
+    is painted (PolygonToLine then Buffer, matching the line-layer path).  Returns a bool
+    (nr, nc) array - True where paint features are present - with the same shape as arr_shape.
 
     arcpy.env snap/extent/cellSize are set to align output pixels exactly to the snap
     raster, so indices correspond 1-to-1 with the resampled DEM array.  Environment
     variables are restored on exit.
     """
-    tmp_buf = None
+    tmp_buf      = None
+    tmp_boundary = None
     tmp_ras = os.path.join(scratch, "dem23mf_paintras.tif")
 
     try:
@@ -300,6 +303,18 @@ def _rasterize_paint_layer(paint_fc: str, snap_raster: str, arr_shape: tuple,
             if arcpy.Exists(tmp_buf):
                 arcpy.management.Delete(tmp_buf)
             arcpy.analysis.Buffer(paint_fc, tmp_buf, buffer_map_units, dissolve_option="ALL")
+            src = tmp_buf
+        elif buffer_map_units and shape_type == "Polygon":
+            # Width specified → paint the buffered boundary band, not the full interior.
+            # Extract polygon rings as lines, then buffer those lines.
+            tmp_boundary = "memory/dem23mf_paintboundary"
+            if arcpy.Exists(tmp_boundary):
+                arcpy.management.Delete(tmp_boundary)
+            arcpy.management.PolygonToLine(paint_fc, tmp_boundary)
+            tmp_buf = "memory/dem23mf_paintbuf"
+            if arcpy.Exists(tmp_buf):
+                arcpy.management.Delete(tmp_buf)
+            arcpy.analysis.Buffer(tmp_boundary, tmp_buf, buffer_map_units, dissolve_option="ALL")
             src = tmp_buf
         else:
             src = paint_fc
@@ -342,6 +357,11 @@ def _rasterize_paint_layer(paint_fc: str, snap_raster: str, arr_shape: tuple,
         return mask
 
     finally:
+        if tmp_boundary:
+            try:
+                arcpy.management.Delete(tmp_boundary)
+            except Exception:
+                pass
         if tmp_buf:
             try:
                 arcpy.management.Delete(tmp_buf)
@@ -361,25 +381,25 @@ def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str,
     """Write a triangle mesh (V0/V1/V2 vertex arrays) as a standards-compliant 3MF file.
 
     A 3MF file is an OPC (ZIP) package with three required members:
-        [Content_Types].xml   — declares .rels and .model content types
-        _rels/.rels           — points the package root at the 3D model part
-        3D/3dmodel.model      — model geometry plus optional color metadata
+        [Content_Types].xml   - declares .rels and .model content types
+        _rels/.rels           - points the package root at the 3D model part
+        3D/3dmodel.model      - model geometry plus optional color metadata
 
     Unlike STL's triangle soup, 3MF uses an *indexed* mesh: a shared vertex list
     plus triangles referencing vertices by index.  Coincident vertices are
     bit-identical (see _build_mesh), so np.unique produces a fully-welded manifold.
 
     Color support (3MF Materials and Properties extension, namespace "m"):
-        base_color        — hex color (#RRGGBB) assigned to the whole object.  Always
+        base_color        - hex color (#RRGGBB) assigned to the whole object.  Always
                             emitted; BambuStudio 1.9+ maps this to an AMS filament slot
                             via its "Standard 3MF Color Parsing" dialog.
-        tri_color_indices — optional int array length total_tris; 0 = base_color,
+        tri_color_indices - optional int array length total_tris; 0 = base_color,
                             1..N index into paint_colors.  Non-zero terrain triangles
                             receive a per-triangle color override; walls and bottom
                             always use index 0 (base_color).
-        paint_colors      — list of N hex strings matching indices 1..N.
+        paint_colors      - list of N hex strings matching indices 1..N.
 
-    Uppercase hex digits are required — Bambu's parser silently drops lowercase.
+    Uppercase hex digits are required - Bambu's parser silently drops lowercase.
 
     Returns (total_triangles, vertex_count, file_size_mb).
     """
@@ -515,7 +535,7 @@ def _array_to_3mf(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float, out_3mf:
         n_terrain         = 2 * int(valid_cell.sum())   # two tris per valid quad
         tri_color_indices = np.zeros(total_tris, dtype=np.int32)
         # Apply each paint layer in order; later layers win on overlap.
-        # _build_mesh lays out terrain tris as [all Tri1s, all Tri2s] — np.tile
+        # _build_mesh lays out terrain tris as [all Tri1s, all Tri2s] - np.tile
         # replicates the per-quad mask into both halves correctly.
         for k, qmask in enumerate(quad_paint_masks, start=1):
             quad_colors = qmask[valid_cell]
@@ -541,7 +561,7 @@ class DEMToSTL(object):
 
     Workflow overview
     -----------------
-    1.  Describe the input DEM — get real-world extent and native cell size.
+    1.  Describe the input DEM - get real-world extent and native cell size.
     2.  Compute XY scale (mm per map unit) so the longest axis fills the bed.
     3.  Derive a target cell size from the user's Minimum Detail Size parameter
         (clamped to the native resolution so we never upsample).
@@ -586,7 +606,7 @@ class DEMToSTL(object):
     # ------------------------------------------------------------------
     def getParameterInfo(self):
 
-        # 0 — Input DEM
+        # 0 - Input DEM
         p0 = arcpy.Parameter(
             displayName="Input DEM",
             name="in_dem",
@@ -595,7 +615,7 @@ class DEMToSTL(object):
             direction="Input",
         )
 
-        # 1 — Elevation Units
+        # 1 - Elevation Units
         p1 = arcpy.Parameter(
             displayName="Elevation Units",
             name="elev_units",
@@ -605,9 +625,9 @@ class DEMToSTL(object):
         )
         p1.filter.type = "ValueList"
         p1.filter.list = ["Meters", "Feet"]
-        # No default — forces an explicit choice when auto-detection fails.
+        # No default - forces an explicit choice when auto-detection fails.
 
-        # 2 — Output STL file
+        # 2 - Output STL file
         p2 = arcpy.Parameter(
             displayName="Output STL File",
             name="out_stl",
@@ -617,7 +637,7 @@ class DEMToSTL(object):
         )
         p2.filter.list = ["stl"]
 
-        # 3 — Max print-bed dimension
+        # 3 - Max print-bed dimension
         p3 = arcpy.Parameter(
             displayName="Maximum Print-Bed Dimension (mm)",
             name="max_bed_dim",
@@ -627,7 +647,7 @@ class DEMToSTL(object):
         )
         p3.value = 180.0
 
-        # 4 — Vertical exaggeration
+        # 4 - Vertical exaggeration
         p4 = arcpy.Parameter(
             displayName="Vertical Exaggeration Factor",
             name="vert_exag",
@@ -637,7 +657,7 @@ class DEMToSTL(object):
         )
         p4.value = 1.0
 
-        # 5 — Minimum detail size (controls resampling / mesh density)
+        # 5 - Minimum detail size (controls resampling / mesh density)
         p5 = arcpy.Parameter(
             displayName="Minimum Detail Size (mm)",
             name="min_detail",
@@ -647,7 +667,7 @@ class DEMToSTL(object):
         )
         p5.value = 0.2
 
-        # 6 — Base thickness
+        # 6 - Base thickness
         p6 = arcpy.Parameter(
             displayName="Base Thickness (mm)",
             name="base_thick",
@@ -657,7 +677,7 @@ class DEMToSTL(object):
         )
         p6.value = 3.0
 
-        # 7 — Z floor (vertical reference for the base of the model)
+        # 7 - Z floor (vertical reference for the base of the model)
         p7 = arcpy.Parameter(
             displayName="Z Floor Reference",
             name="z_floor",
@@ -669,7 +689,7 @@ class DEMToSTL(object):
         p7.filter.list = ["Sea Level (0)", "Minimum Elevation"]
         p7.value = "Sea Level (0)"
 
-        # 8 — Model footprint (rectangular vs. tight boundary)
+        # 8 - Model footprint (rectangular vs. tight boundary)
         p8 = arcpy.Parameter(
             displayName="Model Footprint",
             name="model_footprint",
@@ -718,7 +738,7 @@ class DEMToSTL(object):
             if p_bed.value <= 0:
                 p_bed.setErrorMessage("Maximum bed dimension must be greater than 0.")
             elif p_bed.value < 10:
-                p_bed.setWarningMessage("Very small bed dimension — the model may lack usable surface detail.")
+                p_bed.setWarningMessage("Very small bed dimension - the model may lack usable surface detail.")
 
         if p_exag.value is not None and p_exag.value <= 0:
             p_exag.setErrorMessage("Vertical exaggeration must be greater than 0.")
@@ -747,8 +767,8 @@ class DEMToSTL(object):
         if not out_stl.lower().endswith(".stl"):
             out_stl += ".stl"
 
-        # ── Step 1/6 — Describe DEM ──────────────────────────────────────────
-        messages.addMessage("Step 1/6 — Analyzing input DEM...")
+        # ── Step 1/6 - Describe DEM ──────────────────────────────────────────
+        messages.addMessage("Step 1/6 - Analyzing input DEM...")
         desc    = arcpy.Describe(in_dem)
         sr      = desc.spatialReference
         ext     = desc.extent
@@ -760,13 +780,13 @@ class DEMToSTL(object):
         messages.addMessage(f"  Cell size : {orig_cs:.4f} map units")
 
         # z_to_xy converts elevation values to XY map units before xy_scale is
-        # applied — handles the common case where Z is in feet but XY is meters.
+        # applied - handles the common case where Z is in feet but XY is meters.
         xy_unit_name = sr.linearUnitName.lower() if sr else "meter"
         xy_is_feet   = "foot" in xy_unit_name or "feet" in xy_unit_name
 
         if elev_units is None:
             elev_units = "Feet" if xy_is_feet else "Meters"
-            messages.addMessage(f"  Elevation units : not specified — assuming {elev_units} (same as XY units)")
+            messages.addMessage(f"  Elevation units : not specified - assuming {elev_units} (same as XY units)")
 
         z_is_feet = (elev_units == "Feet")
         if z_is_feet and not xy_is_feet:
@@ -785,20 +805,20 @@ class DEMToSTL(object):
         else:
             messages.addMessage(f"  Elevation units : {elev_units} (matches XY units, no conversion)")
 
-        # ── Step 2/6 — Scale and target cell size ────────────────────────────
-        messages.addMessage("Step 2/6 — Computing scale factors...")
+        # ── Step 2/6 - Scale and target cell size ────────────────────────────
+        messages.addMessage("Step 2/6 - Computing scale factors...")
         xy_scale  = max_bed / max(rw_w, rw_h)
         target_rw = max(min_detail / xy_scale, orig_cs)
 
         messages.addMessage(f"  XY scale    : 1:{1/xy_scale:,.0f}  ({xy_scale:.6f} mm/map unit)")
         messages.addMessage(f"  Target cell : {target_rw:.4f} map units  ({target_rw * xy_scale:.3f} mm in model)")
 
-        # ── Step 3/6 — Resample DEM ──────────────────────────────────────────
+        # ── Step 3/6 - Resample DEM ──────────────────────────────────────────
         # Simplification happens HERE, before triangulation.
         # A 1 m / 1 km DEM has ~1 M cells; at a 1:5 000 scale each maps to
-        # 0.2 mm — far below any printer resolution. Resampling first gives
+        # 0.2 mm - far below any printer resolution. Resampling first gives
         # exactly the right triangle count with no wasted intermediate memory.
-        messages.addMessage("Step 3/6 — Resampling DEM to target cell size (BILINEAR)...")
+        messages.addMessage("Step 3/6 - Resampling DEM to target cell size (BILINEAR)...")
         scratch    = arcpy.env.scratchFolder or tempfile.gettempdir()
         tmp_raster = os.path.join(scratch, "dem2stl_resampled.tif")
 
@@ -810,8 +830,8 @@ class DEMToSTL(object):
                 resampling_type="BILINEAR",
             )
 
-            # ── Step 4/6 — Load into NumPy ───────────────────────────────────
-            messages.addMessage("Step 4/6 — Loading raster into memory...")
+            # ── Step 4/6 - Load into NumPy ───────────────────────────────────
+            messages.addMessage("Step 4/6 - Loading raster into memory...")
             arr = _load_raster_array(tmp_raster)
 
         finally:
@@ -830,8 +850,8 @@ class DEMToSTL(object):
         cell_mm_h  = model_h_mm / (nr - 1)
         messages.addMessage(f"  Cell spacing : {cell_mm_w:.3f} x {cell_mm_h:.3f} mm")
 
-        # ── Step 5/6 — Z floor and elevation array ───────────────────────────
-        messages.addMessage("Step 5/6 — Processing elevation values...")
+        # ── Step 5/6 - Z floor and elevation array ───────────────────────────
+        messages.addMessage("Step 5/6 - Processing elevation values...")
         nan_mask     = np.isnan(arr)
         elev_min_raw = float(np.nanmin(arr))
         elev_max_raw = float(np.nanmax(arr))
@@ -856,8 +876,8 @@ class DEMToSTL(object):
         messages.addMessage(f"  Terrain relief : {relief_mm:.2f} mm  (x{vert_exag:.2f} exag)")
         messages.addMessage(f"  Total height   : {total_z_mm:.2f} mm  (terrain + {base_thick:.1f} mm base)")
 
-        # ── Step 6/6 — Build mesh and write STL ──────────────────────────────
-        messages.addMessage(f"Step 6/6 — Building mesh and writing STL: {out_stl}")
+        # ── Step 6/6 - Build mesh and write STL ──────────────────────────────
+        messages.addMessage(f"Step 6/6 - Building mesh and writing STL: {out_stl}")
         total_tris, fsize_mb = _array_to_stl(z_mm, cell_mm_w, cell_mm_h, out_stl)
 
         messages.addMessage("")
@@ -888,7 +908,7 @@ class SplitDEMToSTL(object):
 
     Workflow
     --------
-    1.  Describe the DEM — establish extent, cell size, and z_to_xy factor.
+    1.  Describe the DEM - establish extent, cell size, and z_to_xy factor.
     2.  Scan all polygon extents (intersected with the DEM extent) to find the
         largest dimension; compute a single global XY scale and target cell size.
     3.  For each polygon:
@@ -901,7 +921,7 @@ class SplitDEMToSTL(object):
     "Minimum Elevation (per piece)" : each piece independently stands up from
         its own local minimum.  Pieces may differ in absolute model height but
         every model uses its full base thickness over its own lowest terrain.
-    "Sea Level (0)" : z_ref = min(local_min, 0) for every piece — pieces that
+    "Sea Level (0)" : z_ref = min(local_min, 0) for every piece - pieces that
         share the same datum will have consistent relative heights and can be
         arranged side-by-side to form a continuous landscape.
     """
@@ -919,7 +939,7 @@ class SplitDEMToSTL(object):
     # ------------------------------------------------------------------
     def getParameterInfo(self):
 
-        # 0 — Input DEM
+        # 0 - Input DEM
         p0 = arcpy.Parameter(
             displayName="Input DEM",
             name="in_dem",
@@ -928,7 +948,7 @@ class SplitDEMToSTL(object):
             direction="Input",
         )
 
-        # 1 — Elevation Units
+        # 1 - Elevation Units
         p1 = arcpy.Parameter(
             displayName="Elevation Units",
             name="elev_units",
@@ -939,7 +959,7 @@ class SplitDEMToSTL(object):
         p1.filter.type = "ValueList"
         p1.filter.list = ["Meters", "Feet"]
 
-        # 2 — Split Polygon Feature Class
+        # 2 - Split Polygon Feature Class
         p2 = arcpy.Parameter(
             displayName="Split Polygon Feature Class",
             name="split_polys",
@@ -949,7 +969,7 @@ class SplitDEMToSTL(object):
         )
         p2.filter.list = ["Polygon"]
 
-        # 3 — Name Attribute (optional field from p2 used in output filenames)
+        # 3 - Name Attribute (optional field from p2 used in output filenames)
         p3 = arcpy.Parameter(
             displayName="Name Attribute",
             name="name_attr",
@@ -960,7 +980,7 @@ class SplitDEMToSTL(object):
         p3.parameterDependencies = [p2.name]
         p3.filter.list = ["Short", "Long", "BigInteger", "Double", "Single", "Text"]
 
-        # 4 — Output Folder
+        # 4 - Output Folder
         p4 = arcpy.Parameter(
             displayName="Output Folder",
             name="out_folder",
@@ -969,7 +989,7 @@ class SplitDEMToSTL(object):
             direction="Input",
         )
 
-        # 5 — Output Base Name
+        # 5 - Output Base Name
         p5 = arcpy.Parameter(
             displayName="Output Base Name",
             name="base_name",
@@ -978,7 +998,7 @@ class SplitDEMToSTL(object):
             direction="Input",
         )
 
-        # 6 — Max print-bed dimension
+        # 6 - Max print-bed dimension
         p6 = arcpy.Parameter(
             displayName="Maximum Print-Bed Dimension (mm)",
             name="max_bed_dim",
@@ -988,7 +1008,7 @@ class SplitDEMToSTL(object):
         )
         p6.value = 180.0
 
-        # 7 — Vertical exaggeration
+        # 7 - Vertical exaggeration
         p7 = arcpy.Parameter(
             displayName="Vertical Exaggeration Factor",
             name="vert_exag",
@@ -998,7 +1018,7 @@ class SplitDEMToSTL(object):
         )
         p7.value = 1.0
 
-        # 8 — Minimum detail size
+        # 8 - Minimum detail size
         p8 = arcpy.Parameter(
             displayName="Minimum Detail Size (mm)",
             name="min_detail",
@@ -1008,7 +1028,7 @@ class SplitDEMToSTL(object):
         )
         p8.value = 0.2
 
-        # 9 — Base thickness
+        # 9 - Base thickness
         p9 = arcpy.Parameter(
             displayName="Base Thickness (mm)",
             name="base_thick",
@@ -1018,7 +1038,7 @@ class SplitDEMToSTL(object):
         )
         p9.value = 3.0
 
-        # 10 — Z floor reference
+        # 10 - Z floor reference
         p10 = arcpy.Parameter(
             displayName="Z Floor Reference",
             name="z_floor",
@@ -1030,7 +1050,7 @@ class SplitDEMToSTL(object):
         p10.filter.list = ["Sea Level (0)", "Minimum Elevation (per piece)"]
         p10.value = "Sea Level (0)"
 
-        # 11 — Model footprint
+        # 11 - Model footprint
         p11 = arcpy.Parameter(
             displayName="Model Footprint",
             name="model_footprint",
@@ -1081,7 +1101,7 @@ class SplitDEMToSTL(object):
             if p_bed.value <= 0:
                 p_bed.setErrorMessage("Maximum bed dimension must be greater than 0.")
             elif p_bed.value < 10:
-                p_bed.setWarningMessage("Very small bed dimension — the model may lack usable surface detail.")
+                p_bed.setWarningMessage("Very small bed dimension - the model may lack usable surface detail.")
 
         if p_exag.value is not None and p_exag.value <= 0:
             p_exag.setErrorMessage("Vertical exaggeration must be greater than 0.")
@@ -1112,8 +1132,8 @@ class SplitDEMToSTL(object):
 
         os.makedirs(out_folder, exist_ok=True)
 
-        # ── Step 1/3 — Describe DEM ──────────────────────────────────────────
-        messages.addMessage("Step 1/3 — Analyzing input DEM...")
+        # ── Step 1/3 - Describe DEM ──────────────────────────────────────────
+        messages.addMessage("Step 1/3 - Analyzing input DEM...")
         dem_desc = arcpy.Describe(in_dem)
         sr       = dem_desc.spatialReference
         dem_ext  = dem_desc.extent
@@ -1127,7 +1147,7 @@ class SplitDEMToSTL(object):
 
         if elev_units is None:
             elev_units = "Feet" if xy_is_feet else "Meters"
-            messages.addMessage(f"  Elevation units : not specified — assuming {elev_units} (same as XY units)")
+            messages.addMessage(f"  Elevation units : not specified - assuming {elev_units} (same as XY units)")
 
         z_is_feet = (elev_units == "Feet")
         if z_is_feet and not xy_is_feet:
@@ -1146,8 +1166,8 @@ class SplitDEMToSTL(object):
         else:
             messages.addMessage(f"  Elevation units : {elev_units} (matches XY units, no conversion)")
 
-        # ── Step 2/3 — Scan polygons, compute global scale ───────────────────
-        messages.addMessage("Step 2/3 — Scanning split polygons for consistent scale...")
+        # ── Step 2/3 - Scan polygons, compute global scale ───────────────────
+        messages.addMessage("Step 2/3 - Scanning split polygons for consistent scale...")
 
         cursor_fields = ["OID@", "SHAPE@"]
         if name_attr:
@@ -1186,8 +1206,8 @@ class SplitDEMToSTL(object):
         messages.addMessage(f"  XY scale    : 1:{1/xy_scale:,.0f}  ({xy_scale:.6f} mm/map unit)")
         messages.addMessage(f"  Target cell : {target_rw:.4f} map units  ({target_rw * xy_scale:.3f} mm)")
 
-        # ── Step 3/3 — Process each polygon piece ────────────────────────────
-        messages.addMessage(f"Step 3/3 — Processing {len(pieces)} piece(s)...")
+        # ── Step 3/3 - Process each polygon piece ────────────────────────────
+        messages.addMessage(f"Step 3/3 - Processing {len(pieces)} piece(s)...")
 
         scratch    = arcpy.env.scratchFolder or tempfile.gettempdir()
         poly_layer = arcpy.management.MakeFeatureLayer(poly_fc, "split_stl_polys")[0]
@@ -1208,7 +1228,7 @@ class SplitDEMToSTL(object):
                 clip_x1 = min(pe.XMax, dem_ext.XMax)
                 clip_y1 = min(pe.YMax, dem_ext.YMax)
                 if clip_x1 <= clip_x0 or clip_y1 <= clip_y0:
-                    messages.addWarningMessage("    Polygon does not overlap the DEM — skipping.")
+                    messages.addWarningMessage("    Polygon does not overlap the DEM - skipping.")
                     skipped += 1
                     continue
 
@@ -1238,7 +1258,7 @@ class SplitDEMToSTL(object):
                     nr, nc = arr.shape
 
                     if nr < 2 or nc < 2:
-                        messages.addWarningMessage("    Piece is too small after resampling (<2x2 grid) — skipping.")
+                        messages.addWarningMessage("    Piece is too small after resampling (<2x2 grid) - skipping.")
                         skipped += 1
                         continue
 
@@ -1285,7 +1305,7 @@ class SplitDEMToSTL(object):
         processed = len(pieces) - skipped
         messages.addMessage(f"\n✓  {processed} of {len(pieces)} piece(s) written to: {out_folder}")
         if skipped:
-            messages.addMessage(f"  ({skipped} skipped — see warnings above)")
+            messages.addMessage(f"  ({skipped} skipped - see warnings above)")
 
     # ------------------------------------------------------------------
     def postExecute(self, parameters):
@@ -1298,8 +1318,8 @@ class DEMTo3MF(object):
     Converts a DEM raster to a watertight 3MF file for 3-D printing.
 
     This tool is the 3MF counterpart of "DEM to STL". The DEM analysis, scaling,
-    resampling, elevation handling, and mesh construction are identical — the two
-    tools share _build_mesh — so a given DEM produces the same geometry either way.
+    resampling, elevation handling, and mesh construction are identical - the two
+    tools share _build_mesh - so a given DEM produces the same geometry either way.
     Only the output container differs: STL writes a binary triangle soup, while
     this tool writes a standards-compliant 3MF (an OPC/ZIP package holding an
     indexed, welded, manifold mesh in 3D/3dmodel.model), which imports directly
@@ -1336,7 +1356,7 @@ class DEMTo3MF(object):
     # ------------------------------------------------------------------
     def getParameterInfo(self):
 
-        # 0 — Input DEM
+        # 0 - Input DEM
         p0 = arcpy.Parameter(
             displayName="Input DEM",
             name="in_dem",
@@ -1345,7 +1365,7 @@ class DEMTo3MF(object):
             direction="Input",
         )
 
-        # 1 — Elevation Units
+        # 1 - Elevation Units
         p1 = arcpy.Parameter(
             displayName="Elevation Units",
             name="elev_units",
@@ -1355,9 +1375,9 @@ class DEMTo3MF(object):
         )
         p1.filter.type = "ValueList"
         p1.filter.list = ["Meters", "Feet"]
-        # No default — forces an explicit choice when auto-detection fails.
+        # No default - forces an explicit choice when auto-detection fails.
 
-        # 2 — Output 3MF file
+        # 2 - Output 3MF file
         p2 = arcpy.Parameter(
             displayName="Output 3MF File",
             name="out_3mf",
@@ -1367,7 +1387,7 @@ class DEMTo3MF(object):
         )
         p2.filter.list = ["3mf"]
 
-        # 3 — Max print-bed dimension
+        # 3 - Max print-bed dimension
         p3 = arcpy.Parameter(
             displayName="Maximum Print-Bed Dimension (mm)",
             name="max_bed_dim",
@@ -1377,7 +1397,7 @@ class DEMTo3MF(object):
         )
         p3.value = 180.0
 
-        # 4 — Vertical exaggeration
+        # 4 - Vertical exaggeration
         p4 = arcpy.Parameter(
             displayName="Vertical Exaggeration Factor",
             name="vert_exag",
@@ -1387,7 +1407,7 @@ class DEMTo3MF(object):
         )
         p4.value = 1.0
 
-        # 5 — Minimum detail size (controls resampling / mesh density)
+        # 5 - Minimum detail size (controls resampling / mesh density)
         p5 = arcpy.Parameter(
             displayName="Minimum Detail Size (mm)",
             name="min_detail",
@@ -1397,7 +1417,7 @@ class DEMTo3MF(object):
         )
         p5.value = 0.2
 
-        # 6 — Base thickness
+        # 6 - Base thickness
         p6 = arcpy.Parameter(
             displayName="Base Thickness (mm)",
             name="base_thick",
@@ -1407,7 +1427,7 @@ class DEMTo3MF(object):
         )
         p6.value = 3.0
 
-        # 7 — Z floor (vertical reference for the base of the model)
+        # 7 - Z floor (vertical reference for the base of the model)
         p7 = arcpy.Parameter(
             displayName="Z Floor Reference",
             name="z_floor",
@@ -1419,7 +1439,7 @@ class DEMTo3MF(object):
         p7.filter.list = ["Sea Level (0)", "Minimum Elevation"]
         p7.value = "Sea Level (0)"
 
-        # 8 — Model footprint (rectangular vs. tight boundary)
+        # 8 - Model footprint (rectangular vs. tight boundary)
         p8 = arcpy.Parameter(
             displayName="Model Footprint",
             name="model_footprint",
@@ -1433,7 +1453,7 @@ class DEMTo3MF(object):
 
         # ── Colors group ─────────────────────────────────────────────────────
 
-        # 9 — Base Color (whole-model default; always written to the 3MF color group)
+        # 9 - Base Color (whole-model default; always written to the 3MF color group)
         p9 = arcpy.Parameter(
             displayName="Base Color",
             name="base_color",
@@ -1446,7 +1466,7 @@ class DEMTo3MF(object):
         p9.filter.list = list(PAINT_COLORS.keys())
         p9.value = "White"
 
-        # 10 — Paint Layers (value table: one row per paint layer)
+        # 10 - Paint Layers (value table: one row per paint layer)
         # Columns: Layer (feature class draped onto terrain), Color (named color),
         # Width mm (buffer radius for Line/Point layers; ignored for Polygon layers).
         p10 = arcpy.Parameter(
@@ -1499,7 +1519,7 @@ class DEMTo3MF(object):
             if p_bed.value <= 0:
                 p_bed.setErrorMessage("Maximum bed dimension must be greater than 0.")
             elif p_bed.value < 10:
-                p_bed.setWarningMessage("Very small bed dimension — the model may lack usable surface detail.")
+                p_bed.setWarningMessage("Very small bed dimension - the model may lack usable surface detail.")
 
         if p_exag.value is not None and p_exag.value <= 0:
             p_exag.setErrorMessage("Vertical exaggeration must be greater than 0.")
@@ -1535,7 +1555,7 @@ class DEMTo3MF(object):
                     continue
                 color_name = str(row[1]) if row[1] is not None else list(PAINT_COLORS.keys())[0]
                 color_hex  = PAINT_COLORS.get(color_name, "#FF0000")
-                width_mm   = float(row[2]) if row[2] else 1.0
+                width_mm   = float(row[2]) if row[2] else None
                 paint_layer_entries.append((layer_path, color_name, color_hex, width_mm))
 
         tight = (footprint_mode == "Tight (Follows DEM Boundary)")
@@ -1545,8 +1565,8 @@ class DEMTo3MF(object):
 
         base_color_hex = PAINT_COLORS.get(base_color_name or "White", "#FFFFFF")
 
-        # ── Step 1/6 — Describe DEM ──────────────────────────────────────────
-        messages.addMessage("Step 1/6 — Analyzing input DEM...")
+        # ── Step 1/6 - Describe DEM ──────────────────────────────────────────
+        messages.addMessage("Step 1/6 - Analyzing input DEM...")
         desc    = arcpy.Describe(in_dem)
         sr      = desc.spatialReference
         ext     = desc.extent
@@ -1558,13 +1578,13 @@ class DEMTo3MF(object):
         messages.addMessage(f"  Cell size : {orig_cs:.4f} map units")
 
         # z_to_xy converts elevation values to XY map units before xy_scale is
-        # applied — handles the common case where Z is in feet but XY is meters.
+        # applied - handles the common case where Z is in feet but XY is meters.
         xy_unit_name = sr.linearUnitName.lower() if sr else "meter"
         xy_is_feet   = "foot" in xy_unit_name or "feet" in xy_unit_name
 
         if elev_units is None:
             elev_units = "Feet" if xy_is_feet else "Meters"
-            messages.addMessage(f"  Elevation units : not specified — assuming {elev_units} (same as XY units)")
+            messages.addMessage(f"  Elevation units : not specified - assuming {elev_units} (same as XY units)")
 
         z_is_feet = (elev_units == "Feet")
         if z_is_feet and not xy_is_feet:
@@ -1583,16 +1603,16 @@ class DEMTo3MF(object):
         else:
             messages.addMessage(f"  Elevation units : {elev_units} (matches XY units, no conversion)")
 
-        # ── Step 2/6 — Scale and target cell size ────────────────────────────
-        messages.addMessage("Step 2/6 — Computing scale factors...")
+        # ── Step 2/6 - Scale and target cell size ────────────────────────────
+        messages.addMessage("Step 2/6 - Computing scale factors...")
         xy_scale  = max_bed / max(rw_w, rw_h)
         target_rw = max(min_detail / xy_scale, orig_cs)
 
         messages.addMessage(f"  XY scale    : 1:{1/xy_scale:,.0f}  ({xy_scale:.6f} mm/map unit)")
         messages.addMessage(f"  Target cell : {target_rw:.4f} map units  ({target_rw * xy_scale:.3f} mm in model)")
 
-        # ── Step 3/6 — Resample DEM ──────────────────────────────────────────
-        messages.addMessage("Step 3/6 — Resampling DEM to target cell size (BILINEAR)...")
+        # ── Step 3/6 - Resample DEM ──────────────────────────────────────────
+        messages.addMessage("Step 3/6 - Resampling DEM to target cell size (BILINEAR)...")
         scratch    = arcpy.env.scratchFolder or tempfile.gettempdir()
         tmp_raster = os.path.join(scratch, "dem23mf_resampled.tif")
 
@@ -1607,8 +1627,8 @@ class DEMTo3MF(object):
                 resampling_type="BILINEAR",
             )
 
-            # ── Step 4/6 — Load into NumPy ───────────────────────────────────
-            messages.addMessage("Step 4/6 — Loading raster into memory...")
+            # ── Step 4/6 - Load into NumPy ───────────────────────────────────
+            messages.addMessage("Step 4/6 - Loading raster into memory...")
             arr = _load_raster_array(tmp_raster)
 
             # Rasterize each paint layer while the snap raster still exists on disk.
@@ -1623,11 +1643,17 @@ class DEMTo3MF(object):
                         shape_type = arcpy.Describe(layer_path).shapeType
                     except Exception:
                         shape_type = ""
-                    buf_units = None
-                    if shape_type in ("Polyline", "Point", "Multipoint") and width_mm > 0:
-                        buf_units = (width_mm / 2.0) / xy_scale
+                    buf_units    = None
+                    display_width = None
+                    if shape_type in ("Polyline", "Point", "Multipoint"):
+                        effective_width = width_mm if width_mm is not None else 1.0
+                        buf_units     = (effective_width / 2.0) / xy_scale
+                        display_width = effective_width   # always shown for line/point
+                    elif shape_type == "Polygon" and width_mm is not None and width_mm > 0:
+                        buf_units     = (width_mm / 2.0) / xy_scale
+                        display_width = width_mm          # only shown when explicitly set
                     layer_basename = os.path.basename(str(layer_path))
-                    buf_info = f", {width_mm:.4g} mm buffer" if buf_units else ""
+                    buf_info = f", {display_width:.4g} mm width" if display_width is not None else ""
                     messages.addMessage(
                         f"  Layer {i+1}/{n}: {layer_basename}"
                         f"  ({shape_type or 'Unknown'} → {color_name}{buf_info})"
@@ -1651,7 +1677,7 @@ class DEMTo3MF(object):
                         paint_layer_names.append(layer_basename)
                     else:
                         messages.addWarningMessage(
-                            f"    Layer {i+1} produced no painted quads — skipping."
+                            f"    Layer {i+1} produced no painted quads - skipping."
                         )
 
         finally:
@@ -1670,8 +1696,8 @@ class DEMTo3MF(object):
         cell_mm_h  = model_h_mm / (nr - 1)
         messages.addMessage(f"  Cell spacing : {cell_mm_w:.3f} x {cell_mm_h:.3f} mm")
 
-        # ── Step 5/6 — Z floor and elevation array ───────────────────────────
-        messages.addMessage("Step 5/6 — Processing elevation values...")
+        # ── Step 5/6 - Z floor and elevation array ───────────────────────────
+        messages.addMessage("Step 5/6 - Processing elevation values...")
         nan_mask     = np.isnan(arr)
         elev_min_raw = float(np.nanmin(arr))
         elev_max_raw = float(np.nanmax(arr))
@@ -1696,8 +1722,8 @@ class DEMTo3MF(object):
         messages.addMessage(f"  Terrain relief : {relief_mm:.2f} mm  (x{vert_exag:.2f} exag)")
         messages.addMessage(f"  Total height   : {total_z_mm:.2f} mm  (terrain + {base_thick:.1f} mm base)")
 
-        # ── Step 6/6 — Build mesh and write 3MF ──────────────────────────────
-        messages.addMessage(f"Step 6/6 — Building mesh and writing 3MF: {out_3mf}")
+        # ── Step 6/6 - Build mesh and write 3MF ──────────────────────────────
+        messages.addMessage(f"Step 6/6 - Building mesh and writing 3MF: {out_3mf}")
         object_name = os.path.splitext(os.path.basename(out_3mf))[0]
         total_tris, vert_count, fsize_mb = _array_to_3mf(
             z_mm, cell_mm_w, cell_mm_h, out_3mf, object_name,
