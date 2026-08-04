@@ -325,9 +325,11 @@ def _rasterize_paint_layer(paint_fc: str, snap_raster: str, arr_shape: tuple,
             arcpy.env.cellSize               = old_cs
             arcpy.env.outputCoordinateSystem = old_crs
 
-        # Load as boolean mask: any non-NoData cell = painted
-        paint_arr = arcpy.RasterToNumPyArray(tmp_ras, nodata_to_value=0).astype(int)
-        mask = (paint_arr != 0)
+        # Load as boolean mask: any non-NoData cell = painted.
+        # Use -1 as nodata sentinel (not 0) because shapefile FID starts at 0,
+        # which would otherwise be indistinguishable from the nodata fill value.
+        paint_arr = arcpy.RasterToNumPyArray(tmp_ras, nodata_to_value=-1).astype(int)
+        mask = (paint_arr != -1)
 
         # Guard against off-by-one from raster snapping
         nr, nc = arr_shape
