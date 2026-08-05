@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata xml:lang="en">
+	<Esri>
+		<CreaDate>20260804</CreaDate>
+		<CreaTime>00000000</CreaTime>
+		<ArcGISFormat>1.0</ArcGISFormat>
+		<SyncOnce>TRUE</SyncOnce>
+	</Esri>
+	<tool name="SplitDEMTo3MF" displayname="Split DEM to 3MF" toolboxalias="dem2stl" xmlns="">
+		<parameters>
+			<param sync="true" name="in_dem" displayname="Input DEM" datatype="Raster Layer" direction="Input" expression="in_dem" type="Required">
+				<dialogReference>
+					<para>The digital elevation model raster to convert. Must be a single-band raster containing elevation values. Both floating-point and integer pixel types are supported; NoData cells are handled automatically based on the chosen Model Footprint.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Path or layer reference to the input single-band elevation raster.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="elev_units" displayname="Elevation Units" datatype="String" direction="Input" expression="elev_units" type="Required">
+				<dialogReference>
+					<para>The vertical unit of measure for the elevation values stored in the DEM (<b>Meters</b> or <b>Feet</b>).</para>
+					<para>When the DEM's spatial reference includes a Vertical Coordinate System (VCS), this value is auto-detected and pre-populated when the DEM is selected. Many DEMs lack a formal VCS even when the elevation unit is well-known; in those cases the field is left blank and a warning is shown - manual selection is required.</para>
+					<para>Choosing the wrong unit when elevation and horizontal (XY) units differ will produce a model with unintended vertical exaggeration. For example, treating feet as meters introduces an approximately 3.28x vertical stretch at Vertical Exaggeration = 1.0.</para>
+				</dialogReference>
+				<pythonReference>
+					<para><code>"Meters"</code> or <code>"Feet"</code>. The vertical unit of the elevation values in the DEM.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="split_polys" displayname="Split Polygon Feature Class" datatype="Feature Layer" direction="Input" expression="split_polys" type="Required">
+				<dialogReference>
+					<para>A polygon feature class that defines how the DEM is divided. One 3MF file is generated for each polygon feature that overlaps the DEM extent. Features that do not overlap the DEM are skipped with a warning. The feature class may be in a different coordinate system from the DEM.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Path or layer reference to the polygon feature class used to split the DEM. Must be a polygon geometry type.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="name_attr" displayname="Name Attribute" datatype="Field" direction="Input" expression="name_attr" type="Optional">
+				<dialogReference>
+					<para>An optional attribute field from the Split Polygon Feature Class whose values are used to name each output file. The field value is appended to the Output Base Name to form each filename (e.g., <code>Region_ValleyFloor.3mf</code>). Characters that are invalid in filenames are replaced with underscores. If left blank, pieces are numbered sequentially (<code>Region_1.3mf</code>, <code>Region_2.3mf</code>, ...).</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Name of a field in the split polygon feature class. Supported types: Short, Long, BigInteger, Double, Single, Text.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="out_folder" displayname="Output Folder" datatype="Folder" direction="Input" expression="out_folder" type="Required">
+				<dialogReference>
+					<para>The folder where all output 3MF files are written. The folder is created automatically if it does not already exist.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Full path to the output folder. Created if it does not exist.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="base_name" displayname="Output Base Name" datatype="String" direction="Input" expression="base_name" type="Required">
+				<dialogReference>
+					<para>A filename prefix shared by all output files. Each file is named <code>&lt;Base Name&gt;_&lt;piece name or number&gt;.3mf</code>. For example, a base name of <code>Region</code> with a Name Attribute value of <code>ValleyFloor</code> produces <code>Region_ValleyFloor.3mf</code>.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Filename prefix for all output files.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="max_bed_dim" displayname="Maximum Print-Bed Dimension (mm)" datatype="Double" direction="Input" expression="max_bed_dim" type="Required">
+				<dialogReference>
+					<para>The longest dimension of the 3D printer's build plate in millimeters. The largest polygon piece (when clipped to the DEM extent) is scaled so its longest axis equals this value. All other pieces are produced at the same scale, so they print proportionally smaller and can be arranged together at the correct relative size.</para>
+					<para>Typical values: 100-220 mm for desktop FDM printers; up to 350 mm for large-format machines. Default: 180 mm.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Maximum build-plate dimension in millimeters (must be &gt; 0). The largest piece is scaled to fit this value; all others use the same scale.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="vert_exag" displayname="Vertical Exaggeration Factor" datatype="Double" direction="Input" expression="vert_exag" type="Required">
+				<dialogReference>
+					<para>Multiplier applied to terrain relief after all unit conversions. Use <code>1.0</code> for a true-scale representation. Values greater than 1.0 amplify topographic relief, which is useful for relatively flat terrain where the natural relief would be too subtle to see at the chosen scale. Base thickness is not affected. The same exaggeration factor is applied to all pieces. Default: 1.0.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Vertical exaggeration multiplier (must be &gt; 0). <code>1.0</code> produces a geometrically accurate model.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="min_detail" displayname="Minimum Detail Size (mm)" datatype="Double" direction="Input" expression="min_detail" type="Required">
+				<dialogReference>
+					<para>The smallest surface feature to preserve in the output model, in millimeters. A single target cell size is derived from this value and the global scale, then applied to all pieces, ensuring consistent mesh density across the set. The cell size is never made finer than the DEM's native resolution (no upsampling).</para>
+					<para>Smaller values capture finer terrain detail but produce more triangles and larger files. A value of 0.2-0.5 mm is a practical range for most FDM printers. Default: 0.2 mm.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Smallest resolvable feature in the output model, in millimeters (must be &gt; 0). Controls the resampling resolution before triangulation.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="base_thick" displayname="Base Thickness (mm)" datatype="Double" direction="Input" expression="base_thick" type="Required">
+				<dialogReference>
+					<para>Thickness of the solid flat base beneath the lowest terrain elevation, in millimeters. A minimum of 1-2 mm is recommended to prevent warping or tipping during printing. Applied to every piece. Default: 3.0 mm.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Solid base thickness in millimeters (must be &gt;= 0).</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="z_floor" displayname="Z Floor Reference" datatype="String" direction="Input" expression="z_floor" type="Required">
+				<dialogReference>
+					<para>Controls which elevation is mapped to the bottom of the terrain surface (the top of the base layer) for each piece.</para>
+					<para><bulletList>
+							<bullet_item><b>Sea Level (0)</b> - Elevation 0 is the terrain floor for every piece. Because the datum reference is shared, adjacent pieces will have consistent relative heights and can be arranged side-by-side to form a continuous landscape. Terrain at or below sea level still appears in the model.</bullet_item>
+							<bullet_item><b>Minimum Elevation (per piece)</b> - Each piece's own lowest elevation is mapped to its terrain floor. Pieces stand independently but may differ in absolute model height, so they cannot be combined into a continuous landscape.</bullet_item>
+						</bulletList></para>
+				</dialogReference>
+				<pythonReference>
+					<para><code>"Sea Level (0)"</code> or <code>"Minimum Elevation (per piece)"</code>.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="model_footprint" displayname="Model Footprint" datatype="String" direction="Input" expression="model_footprint" type="Required">
+				<dialogReference>
+					<para>Controls how areas outside each polygon boundary are handled in the clipped DEM.</para>
+					<para><bulletList>
+							<bullet_item><b>Tight (Follows Polygon Boundary)</b> - NoData cells outside the polygon are left as void. Perimeter walls follow the actual polygon boundary, producing a smaller, more printable model. Recommended for split mode.</bullet_item>
+							<bullet_item><b>Rectangular</b> - Areas outside the polygon are filled with the floor elevation, producing a flat-based rectangular block aligned to the polygon's bounding box.</bullet_item>
+						</bulletList></para>
+				</dialogReference>
+				<pythonReference>
+					<para><code>"Tight (Follows Polygon Boundary)"</code> or <code>"Rectangular"</code>.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="base_color" displayname="Base Color" datatype="String" direction="Input" expression="base_color" type="Optional">
+				<dialogReference>
+					<para>The primary filament color assigned to the entire model, including all perimeter walls and the base. This color is always written to the 3MF color group metadata. When a file is opened in BambuStudio, this color is mapped to your first AMS slot via the Standard 3MF Color Parsing dialog. The same base color is applied to all output pieces. Default: White.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Name of the base color (e.g. <code>"White"</code>, <code>"Black"</code>, <code>"Grey"</code>). Must be one of the values in the tool's color list.</para>
+				</pythonReference>
+			</param>
+			<param sync="true" name="paint_layers" displayname="Paint Layers" datatype="Value Table" direction="Input" expression="paint_layers" type="Optional">
+				<dialogReference>
+					<para>An optional table of one or more paint layers to drape onto the terrain surface of every piece. Each row defines one paint layer:</para>
+					<para><bulletList>
+							<bullet_item><b>Layer</b> - A polygon, polyline, or point feature class. Every terrain triangle whose quad overlaps this layer is assigned the row's color. The feature class may be in a different coordinate system from the DEM; ArcGIS reprojects it on the fly when rasterizing.</bullet_item>
+							<bullet_item><b>Color</b> - The filament color to assign to terrain triangles covered by this layer. Select from the named color list. The same color may be used in multiple rows.</bullet_item>
+							<bullet_item><b>Width (mm)</b> - Buffer width in millimeters (model space) applied before rasterization. For line and point layers, buffers the features to give them rasterizable area. For polygon layers, if a width is provided, only a band of that width along the polygon boundary is painted; if left blank, the full polygon interior is painted. Default: 1.0 mm (line/point layers only).</bullet_item>
+						</bulletList></para>
+					<para>Paint layer geometries are buffered once before the piece loop and then rasterized separately for each piece. A paint layer that produces no painted terrain triangles in a given piece is skipped with a warning for that piece; other pieces are unaffected.</para>
+					<para>When multiple rows overlap the same terrain area, the last row in the table wins. If left empty, each piece is exported as a single-color print using the Base Color only.</para>
+				</dialogReference>
+				<pythonReference>
+					<para>Value table with three columns: <code>layer_path</code> (GPFeatureLayer), <code>color_name</code> (GPString), <code>width_mm</code> (GPDouble). Leave empty for single-color output.</para>
+				</pythonReference>
+			</param>
+		</parameters>
+		<summary>
+			<para>Splits a Digital Elevation Model (DEM) raster by a polygon feature class and converts each piece to a separate watertight 3MF file suitable for 3D printing. A single consistent scale is derived from the largest polygon piece so that all pieces print at their correct relative sizes when arranged together. Supports the same multicolor paint layer workflow as the DEM to 3MF tool, applied independently to every piece.</para>
+		</summary>
+		<usage>
+			<para>Scale is computed globally: the largest polygon piece (clipped to the DEM extent) is measured first, a single XY scale is derived so that piece fits within the Maximum Print-Bed Dimension, and all other pieces are produced at the same scale. This allows pieces to be physically arranged together at the correct relative size.</para>
+			<para>If the DEM stores elevation in different units from its horizontal coordinate system - for example, UTM meters (XY) with NAVD 88 feet (Z) - set <b>Elevation Units</b> to the correct vertical unit. The tool applies the necessary conversion factor automatically, so all pieces have correct proportions at Vertical Exaggeration = 1.0.</para>
+			<para>For multicolor printing: add one or more rows to the <b>Paint Layers</b> table and choose a <b>Base Color</b>. Paint layer geometries (including any buffering) are prepared once before processing begins and then rasterized separately for each piece. This means a paint layer covering a river network, for example, will appear correctly in every piece that the river crosses. Colors are encoded using the 3MF Materials and Properties extension. When a file is imported into BambuStudio 1.9 or later, the Standard 3MF Color Parsing dialog appears and lets you assign each color group to a loaded AMS filament slot.</para>
+			<para>Polygons that do not overlap the DEM extent are skipped with a warning. Processing continues if a single piece fails.</para>
+		</usage>
+	</tool>
+	<dataIdInfo>
+		<idCitation>
+			<resTitle>Split DEM to 3MF</resTitle>
+		</idCitation>
+		<idAbs>Splits a DEM raster by a polygon feature class and converts each piece to a separate watertight 3MF file for 3D printing at a shared consistent scale. Supports optional multicolor painting via one or more vector feature layers draped onto the terrain surface of every piece.</idAbs>
+		<searchKeys>
+			<keyword>DEM</keyword>
+			<keyword>3MF</keyword>
+			<keyword>3D printing</keyword>
+			<keyword>elevation</keyword>
+			<keyword>topography</keyword>
+			<keyword>terrain</keyword>
+			<keyword>digital elevation model</keyword>
+			<keyword>BambuStudio</keyword>
+			<keyword>Bambu Lab</keyword>
+			<keyword>multicolor</keyword>
+			<keyword>AMS</keyword>
+			<keyword>split</keyword>
+			<keyword>tiles</keyword>
+		</searchKeys>
+	</dataIdInfo>
+	<mdHrLv>
+		<ScopeCd value="005"/>
+	</mdHrLv>
+	<distInfo>
+		<distributor>
+			<distorFormat>
+				<formatName>ArcToolbox Tool</formatName>
+			</distorFormat>
+		</distributor>
+	</distInfo>
+</metadata>

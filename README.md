@@ -6,7 +6,7 @@ An ArcGIS Pro Python Toolbox (`.pyt`) that converts Digital Elevation Model rast
 - [DEM to STL](#dem-to-stl) - converts a single DEM to one STL file
 - [Split DEM to STL](#split-dem-to-stl) - divides a DEM by a polygon feature class and produces a separate STL file for each piece at a consistent scale
 - [DEM to 3MF](#dem-to-3mf) - converts a single DEM to one 3MF file, with optional multicolor paint layers
-- [Split DEM to 3MF]() - TODO
+- [Split DEM to 3MF](#split-dem-to-3mf) - divides a DEM by a polygon feature class and produces a separate 3MF file for each piece at a consistent scale, with optional multicolor paint layers
 
 **Requirements:** ArcGIS Pro 3.x with a Standard or Advanced license. No Spatial Analyst extension required.
 
@@ -93,6 +93,35 @@ When multiple paint layers overlap the same terrain area, the last row in the ta
 
 Colors are encoded using the 3MF Materials and Properties extension. When the file is opened in BambuStudio 1.9 or later, the Standard 3MF Color Parsing dialog appears and lets you assign each color group to a loaded AMS filament slot.
 
+
+---
+
+## Split DEM to 3MF
+
+Splits a DEM by a polygon feature class and produces one 3MF file per polygon at a shared consistent scale. Scale is computed globally: the largest polygon piece is measured first, a single XY scale is derived so that piece fits within the print-bed dimension, and all other pieces are produced at the same scale. This allows pieces to be physically arranged together at the correct relative size.
+
+Supports the same multicolor paint layer workflow as DEM to 3MF. Paint layer geometries (including any buffering) are prepared once before processing begins and then rasterized separately for each piece, guaranteeing correct alignment for every piece.
+
+Polygons that do not overlap the DEM extent are skipped with a warning. Processing continues if a single piece fails.
+
+### Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| **Input DEM** | - | Single-band elevation raster. Both floating-point and integer pixel types are supported. |
+| **Elevation Units** | *(auto-detect)* | Vertical unit of the elevation values: Meters or Feet. Applied consistently to all output pieces. See the [General Notes](#elevation-units-and-vertical-exaggeration) above. |
+| **Split Polygon Feature Class** | - | Polygon feature class whose features define the DEM pieces to produce. One 3MF file is generated per feature that overlaps the DEM. The feature class may be in a different coordinate system from the DEM. |
+| **Name Attribute** | *(optional)* | A field from the polygon feature class whose values are appended to the Output Base Name to form each filename (e.g., `Region_ValleyFloor.3mf`). Characters invalid in filenames are replaced with underscores. If omitted, pieces are numbered sequentially (`Region_1.3mf`, `Region_2.3mf`, ...). |
+| **Output Folder** | - | Folder where all 3MF files are written. Created automatically if it does not exist. |
+| **Output Base Name** | - | Filename prefix for all output files. Each file is named `<Base Name>_<piece name or number>.3mf`. |
+| **Maximum Print-Bed Dimension (mm)** | 180 | Longest build-plate dimension in millimeters. The largest polygon piece is scaled to fit this dimension; all other pieces use the same scale and print proportionally smaller. |
+| **Vertical Exaggeration Factor** | 1.0 | Relief multiplier applied consistently to every piece. |
+| **Minimum Detail Size (mm)** | 0.2 | Smallest surface feature to resolve, in millimeters. A single target cell size is derived from this value and applied to all pieces, ensuring consistent mesh density across the set. |
+| **Base Thickness (mm)** | 3.0 | Solid base thickness beneath each piece's terrain floor, in millimeters. Applied to every piece. |
+| **Z Floor Reference** | Sea Level (0) | Controls the terrain floor elevation for each piece. **Sea Level (0)** uses elevation 0 as the floor for every piece - because the datum reference is shared, adjacent pieces will have consistent relative heights and can be arranged side-by-side to form a continuous landscape. **Minimum Elevation (per piece)** uses each piece's own local minimum as its floor; pieces stand independently but may differ in absolute model height. |
+| **Model Footprint** | Tight (Follows Polygon Boundary) | How the clipped boundary of each piece is handled. **Tight** traces walls along the actual polygon boundary and is recommended for split mode. **Rectangular** fills areas outside the polygon with the floor elevation, producing a rectangular block aligned to the polygon's bounding box. |
+| **Base Color** | White | The filament color applied to the entire model by default. Mapped to the first AMS slot when each file is opened in BambuStudio. |
+| **Paint Layers** | *(optional)* | One or more vector layers to drape onto the terrain of every piece. Same three-column format as DEM to 3MF - see [Paint Layers](#paint-layers) above. Paint geometries are buffered once then rasterized per piece; a layer that produces no painted triangles for a given piece is skipped with a warning for that piece. |
 
 ---
 
