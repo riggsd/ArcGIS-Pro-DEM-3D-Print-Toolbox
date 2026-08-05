@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # =============================================================================
-# DEM2STL.pyt  -  ArcGIS Pro Python Toolbox
+# DEM3DPrint.pyt  -  ArcGIS Pro Python Toolbox
 # Converts a Digital Elevation Model raster to a mesh file suitable for 3D printing.
 #
 # Tools:
@@ -574,8 +574,8 @@ def _array_to_3mf(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float, out_3mf:
 # =============================================================================
 class Toolbox(object):
     def __init__(self):
-        self.label = "DEM to STL Toolbox"
-        self.alias = "dem2stl"
+        self.label = "DEM 3D Printing Toolbox"
+        self.alias = "dem3dprint"
         self.tools = [DEMToSTL, SplitDEMToSTL, DEMTo3MF, SplitDEMTo3MF]
 
 
@@ -845,7 +845,7 @@ class DEMToSTL(object):
         # exactly the right triangle count with no wasted intermediate memory.
         messages.addMessage("Step 3/6 - Resampling DEM to target cell size (BILINEAR)...")
         scratch    = arcpy.env.scratchFolder or tempfile.gettempdir()
-        tmp_raster = os.path.join(scratch, "dem2stl_resampled.tif")
+        tmp_raster = os.path.join(scratch, "dem3dp_resampled.tif")
 
         try:
             arcpy.management.Resample(
@@ -1206,7 +1206,7 @@ class SplitDEMToSTL(object):
         # For large continent-wide layers this avoids iterating thousands of
         # irrelevant features. SelectLayerByLocation handles CRS differences.
         total_poly_count = int(arcpy.management.GetCount(poly_layer)[0])
-        dem_extent_fc    = "memory/dem2stl_extent_filter"
+        dem_extent_fc    = "memory/dem3dp_extent_filter"
         try:
             if arcpy.Exists(dem_extent_fc):
                 arcpy.management.Delete(dem_extent_fc)
@@ -1295,8 +1295,8 @@ class SplitDEMToSTL(object):
                     continue
 
                 rect       = f"{clip_x0} {clip_y0} {clip_x1} {clip_y1}"
-                tmp_clip   = os.path.join(scratch, f"dem2stl_clip_{idx}.tif")
-                tmp_resamp = os.path.join(scratch, f"dem2stl_resamp_{idx}.tif")
+                tmp_clip   = os.path.join(scratch, f"dem3dp_clip_{idx}.tif")
+                tmp_resamp = os.path.join(scratch, f"dem3dp_resamp_{idx}.tif")
 
                 try:
                     arcpy.management.SelectLayerByAttribute(
@@ -1701,7 +1701,7 @@ class DEMTo3MF(object):
                 messages.addMessage(f"  Rasterizing {n} paint layer(s)...")
                 total_quads = (arr.shape[0] - 1) * (arr.shape[1] - 1)
 
-                dem_paint_extent_fc = "memory/dem2stl_paint_extent"
+                dem_paint_extent_fc = "memory/dem3dp_paint_extent"
                 try:
                     if arcpy.Exists(dem_paint_extent_fc):
                         arcpy.management.Delete(dem_paint_extent_fc)
@@ -1741,7 +1741,7 @@ class DEMTo3MF(object):
                         if dem_paint_extent_fc:
                             try:
                                 paint_fl = arcpy.management.MakeFeatureLayer(
-                                    layer_path, f"dem2stl_paintfl_{i}"
+                                    layer_path, f"dem3dp_paintfl_{i}"
                                 )[0]
                                 try:
                                     total_feat    = int(arcpy.management.GetCount(paint_fl)[0])
@@ -1750,7 +1750,7 @@ class DEMTo3MF(object):
                                     )
                                     selected_feat = int(arcpy.management.GetCount(paint_fl)[0])
                                     if selected_feat < total_feat:
-                                        tmp_filtered_fc = f"memory/dem2stl_paintfilt_{i}"
+                                        tmp_filtered_fc = f"memory/dem3dp_paintfilt_{i}"
                                         if arcpy.Exists(tmp_filtered_fc):
                                             arcpy.management.Delete(tmp_filtered_fc)
                                         arcpy.management.CopyFeatures(paint_fl, tmp_filtered_fc)
@@ -2203,7 +2203,7 @@ class SplitDEMTo3MF(object):
         # For large continent-wide layers this avoids iterating thousands of
         # irrelevant features. SelectLayerByLocation handles CRS differences.
         total_poly_count = int(arcpy.management.GetCount(poly_layer)[0])
-        dem_extent_fc    = "memory/dem2stl_extent_filter"
+        dem_extent_fc    = "memory/dem3dp_extent_filter"
         try:
             if arcpy.Exists(dem_extent_fc):
                 arcpy.management.Delete(dem_extent_fc)
@@ -2278,7 +2278,7 @@ class SplitDEMTo3MF(object):
             n = len(paint_layer_entries)
             messages.addMessage(f"  Preparing {n} paint layer(s)...")
 
-            dem_paint_extent_fc = "memory/dem2stl_paint_extent"
+            dem_paint_extent_fc = "memory/dem3dp_paint_extent"
             try:
                 if arcpy.Exists(dem_paint_extent_fc):
                     arcpy.management.Delete(dem_paint_extent_fc)
@@ -2317,7 +2317,7 @@ class SplitDEMTo3MF(object):
                 if dem_paint_extent_fc:
                     try:
                         paint_fl = arcpy.management.MakeFeatureLayer(
-                            layer_path, f"dem2stl_paintfl_{i}"
+                            layer_path, f"dem3dp_paintfl_{i}"
                         )[0]
                         try:
                             total_feat    = int(arcpy.management.GetCount(paint_fl)[0])
@@ -2326,7 +2326,7 @@ class SplitDEMTo3MF(object):
                             )
                             selected_feat = int(arcpy.management.GetCount(paint_fl)[0])
                             if selected_feat < total_feat:
-                                tmp_filtered_fc = f"memory/dem2stl_paintfilt_{i}"
+                                tmp_filtered_fc = f"memory/dem3dp_paintfilt_{i}"
                                 if arcpy.Exists(tmp_filtered_fc):
                                     arcpy.management.Delete(tmp_filtered_fc)
                                 arcpy.management.CopyFeatures(paint_fl, tmp_filtered_fc)

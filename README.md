@@ -1,4 +1,4 @@
-# DEM to STL / 3MF Toolbox
+# ArcGIS Pro DEM 3D Printing Toolbox
 
 An ArcGIS Pro Python Toolbox (`.pyt`) that converts Digital Elevation Model rasters to 3D-printable mesh files.
 

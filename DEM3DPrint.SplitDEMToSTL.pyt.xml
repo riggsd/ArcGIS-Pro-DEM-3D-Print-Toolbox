@@ -6,7 +6,7 @@
 		<ArcGISFormat>1.0</ArcGISFormat>
 		<SyncOnce>TRUE</SyncOnce>
 	</Esri>
-	<tool name="SplitDEMToSTL" displayname="Split DEM to STL" toolboxalias="dem2stl" xmlns="">
+	<tool name="SplitDEMToSTL" displayname="Split DEM to STL" toolboxalias="dem3dprint" xmlns="">
 		<parameters>
 			<param sync="true" name="in_dem" displayname="Input DEM" datatype="Raster Layer" direction="Input" expression="in_dem" type="Required">
 				<dialogReference>

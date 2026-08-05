@@ -5,16 +5,16 @@
 		<CreaTime>01331300</CreaTime>
 		<ArcGISFormat>1.0</ArcGISFormat>
 		<SyncOnce>TRUE</SyncOnce>
-		<ModDate>20260804</ModDate><ModTime>162355</ModTime></Esri>
-	<toolbox name="DEM2STL" alias="dem2stl">
+		<ModDate>20260804</ModDate><ModTime>201949</ModTime></Esri>
+	<toolbox name="DEM3DPrint" alias="dem3dprint">
 		<arcToolboxHelpPath>c:\program files\arcgis\pro\Resources\Help\gp</arcToolboxHelpPath>
 		<toolsets/>
 	</toolbox>
 	<dataIdInfo>
 		<idCitation>
-			<resTitle>DEM2STL</resTitle>
+			<resTitle>DEM3DPrint</resTitle>
 		</idCitation>
-		<idAbs>Converts Digital Elevation Model (DEM) rasters to watertight binary STL files for 3D printing. Contains two tools: DEM to STL, which converts a single DEM to one STL file, and Split DEM to STL, which divides a DEM by a polygon feature class and produces a separate STL file for each piece at a consistent scale.</idAbs>
+		<idAbs>Converts Digital Elevation Model (DEM) rasters to watertight 3D-printable mesh files (STL and 3MF). Contains four tools: DEM to STL and DEM to 3MF for single-DEM conversion, and Split DEM to STL and Split DEM to 3MF for dividing a DEM by a polygon feature class and producing one file per piece at a consistent scale. The 3MF tools support optional multicolor paint layers for use with BambuStudio and compatible AMS printers.</idAbs>
 		<searchKeys>
 			<keyword>DEM</keyword>
 			<keyword>STL</keyword>
