@@ -907,9 +907,9 @@ class DEMToSTL(object):
 
         messages.addMessage("")
         messages.addMessage("✓  STL written successfully!")
-        messages.addMessage(f"  Model dimensions : {model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.2f} mm  (W x D x H)")
+        messages.addMessage(f"  Model dimensions : {model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.1f} mm  (W x D x H)")
         messages.addMessage(f"  Triangles        : {total_tris:,}")
-        messages.addMessage(f"  File size        : {fsize_mb:.2f} MB")
+        messages.addMessage(f"  File size        : {fsize_mb:.1f} MB")
         messages.addMessage(f"  Output           : {out_stl}")
 
     # ------------------------------------------------------------------
@@ -1320,7 +1320,7 @@ class SplitDEMToSTL(object):
                     nr, nc = arr.shape
 
                     if nr < 2 or nc < 2:
-                        messages.addWarningMessage("    Piece is too small after resampling (<2x2 grid) - skipping.")
+                        messages.addMessage("    Skipping: piece is too small after resampling (<2x2 grid).")
                         skipped += 1
                         continue
 
@@ -1348,12 +1348,12 @@ class SplitDEMToSTL(object):
 
                     messages.addMessage(
                         f"    ✓  {os.path.basename(out_stl)}"
-                        f"  ({model_w_mm:.1f}x{model_h_mm:.1f}x{total_z_mm:.2f} mm,"
-                        f"  {num_tris:,} tris,  {fsize_mb:.2f} MB)"
+                        f"  ({model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.1f} mm,"
+                        f"  {num_tris:,} triangles,  {fsize_mb:.1f} MB)"
                     )
 
                 except Exception as piece_err:
-                    messages.addWarningMessage(f"    Failed: {piece_err}")
+                    messages.addMessage(f"    Skipping: {piece_err}")
                     skipped += 1
 
                 finally:
@@ -1367,7 +1367,7 @@ class SplitDEMToSTL(object):
         processed = len(pieces) - skipped
         messages.addMessage(f"\n✓  {processed} of {len(pieces)} piece(s) written to: {out_folder}")
         if skipped:
-            messages.addMessage(f"  ({skipped} skipped - see warnings above)")
+            messages.addMessage(f"  ({skipped} skipped)")
 
     # ------------------------------------------------------------------
     def postExecute(self, parameters):
@@ -1857,7 +1857,7 @@ class DEMTo3MF(object):
 
         messages.addMessage("")
         messages.addMessage("✓  3MF written successfully!")
-        messages.addMessage(f"  Model dimensions : {model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.2f} mm  (W x D x H)")
+        messages.addMessage(f"  Model dimensions : {model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.1f} mm  (W x D x H)")
         messages.addMessage(f"  Vertices         : {vert_count:,}")
         messages.addMessage(f"  Triangles        : {total_tris:,}")
         if paint_layer_names:
@@ -1869,7 +1869,7 @@ class DEMTo3MF(object):
             messages.addMessage(f"  Paint layers     : {', '.join(layer_parts)}")
         else:
             messages.addMessage(f"  Color            : {base_color_name}")
-        messages.addMessage(f"  File size        : {fsize_mb:.2f} MB")
+        messages.addMessage(f"  File size        : {fsize_mb:.1f} MB")
         messages.addMessage(f"  Output           : {out_3mf}")
 
     # ------------------------------------------------------------------
@@ -2402,7 +2402,7 @@ class SplitDEMTo3MF(object):
                     nr, nc = arr.shape
 
                     if nr < 2 or nc < 2:
-                        messages.addWarningMessage("    Piece is too small after resampling (<2x2 grid) - skipping.")
+                        messages.addMessage("    Skipping: piece is too small after resampling (<2x2 grid).")
                         skipped += 1
                         continue
 
@@ -2447,17 +2447,14 @@ class SplitDEMTo3MF(object):
                         paint_colors_hex or None,
                     )
 
-                    color_info = ""
-                    if paint_layer_names:
-                        color_info = f",  {len(paint_layer_names)} paint layer(s)"
                     messages.addMessage(
                         f"    ✓  {os.path.basename(out_3mf)}"
-                        f"  ({model_w_mm:.1f}x{model_h_mm:.1f}x{total_z_mm:.2f} mm,"
-                        f"  {total_tris:,} tris,  {fsize_mb:.2f} MB{color_info})"
+                        f"  ({model_w_mm:.1f} x {model_h_mm:.1f} x {total_z_mm:.1f} mm,"
+                        f"  {total_tris:,} triangles,  {fsize_mb:.1f} MB)"
                     )
 
                 except Exception as piece_err:
-                    messages.addWarningMessage(f"    Failed: {piece_err}")
+                    messages.addMessage(f"    Skipping: {piece_err}")
                     skipped += 1
 
                 finally:
@@ -2477,7 +2474,7 @@ class SplitDEMTo3MF(object):
         processed = len(pieces) - skipped
         messages.addMessage(f"\n✓  {processed} of {len(pieces)} piece(s) written to: {out_folder}")
         if skipped:
-            messages.addMessage(f"  ({skipped} skipped - see warnings above)")
+            messages.addMessage(f"  ({skipped} skipped)")
 
     # ------------------------------------------------------------------
     def postExecute(self, parameters):
