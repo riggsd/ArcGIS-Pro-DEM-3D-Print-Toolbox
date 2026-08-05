@@ -21,7 +21,7 @@ import zipfile
 from typing import Optional
 
 
-# Common filament colors, name → uppercase hex (Bambu's parser requires uppercase).
+# Common filament colors, name -> uppercase hex (Bambu's parser requires uppercase).
 PAINT_COLORS = {
     "White":  "#FFFFFF",
     "Black":  "#000000",
@@ -136,9 +136,9 @@ def _build_mesh(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float) -> tuple[n
     #   A = (i,   j  )  NW    B = (i,   j+1)  NE
     #   D = (i+1, j  )  SW    C = (i+1, j+1)  SE
     #
-    # Winding (CCW from above → outward +Z normal):
-    #   Tri1: A, D, C   (NW→SW→SE)   n_z = cw·ch > 0 ✓
-    #   Tri2: A, C, B   (NW→SE→NE)   n_z = cw·ch > 0 ✓
+    # Winding (CCW from above -> outward +Z normal):
+    #   Tri1: A, D, C   (NW->SW->SE)   n_z = cw·ch > 0 ✓
+    #   Tri2: A, C, B   (NW->SE->NE)   n_z = cw·ch > 0 ✓
     A = _gv(ii,     jj);     B = _gv(ii,     jj + 1)
     C = _gv(ii + 1, jj + 1); D = _gv(ii + 1, jj)
     all_v0 += [A, A]; all_v1 += [D, C]; all_v2 += [C, B]
@@ -205,9 +205,9 @@ def _build_mesh(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float) -> tuple[n
     # reversed winding. Every wall-bottom edge is shared by exactly one
     # bottom triangle - no T-junctions, fully manifold.
     #
-    # Winding (reversed from terrain → outward -Z normal):
-    #   Tri1: A, C, D   (NW→SE→SW)   n_z = −cw·ch < 0 ✓
-    #   Tri2: A, B, C   (NW→NE→SE)   n_z = −cw·ch < 0 ✓
+    # Winding (reversed from terrain -> outward -Z normal):
+    #   Tri1: A, C, D   (NW->SE->SW)   n_z = −cw·ch < 0 ✓
+    #   Tri2: A, B, C   (NW->NE->SE)   n_z = −cw·ch < 0 ✓
     def _bv(ri, ci):
         return np.stack([X_grid[ri, ci], Y_grid[ri, ci], np.zeros(len(ri))], axis=1)
 
@@ -276,22 +276,40 @@ def _array_to_stl(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float, out_stl:
     return _write_stl(V0, V1, V2, out_stl)
 
 
-def _prepare_paint_src(paint_fc: str, scratch: str, buffer_map_units: Optional[float],
-                       suffix: str = "") -> tuple:
+def _prepare_paint_src(paint_fc: str, buffer_map_units: Optional[float], target_sr=None, suffix: str = "") -> tuple:
     """Buffer/prepare a paint feature class geometry for rasterization.
 
     Returns (src_fc_path, tmp_fc_list).  src_fc_path is paint_fc itself when no
     buffering is needed, or a buffered copy in the memory workspace.  tmp_fc_list
     contains any temp FCs created - the caller must delete them when done.
 
+    target_sr: the spatial reference of the output raster (DEM CRS).  When provided
+    and the paint FC is in a different CRS, the features are projected to target_sr
+    before buffering so that buffer_map_units (which are in DEM map units) are
+    applied correctly.  Without this, a geographic paint layer (degrees) would receive
+    a buffer distance intended for a projected CRS (meters), producing hemisphere-scale
+    polygons.
+
     suffix makes names unique when multiple paint layers are pre-buffered concurrently
     (e.g. Split DEM to 3MF pre-buffers all layers before its piece loop).
     """
     buf_name      = f"memory/dem23mf_paintbuf{suffix}"
     boundary_name = f"memory/dem23mf_paintboundary{suffix}"
-    shape_type    = arcpy.Describe(paint_fc).shapeType
-    tmp_fcs       = []
+    reprojected_name = f"memory/dem23mf_paintproj{suffix}"
+    tmp_fcs          = []
     try:
+        # Reproject to DEM CRS before buffering when CRS differs.
+        # factoryCode 0 = unknown/custom — always reproject in that case.
+        if buffer_map_units and target_sr is not None:
+            paint_sr = arcpy.Describe(paint_fc).spatialReference
+            if paint_sr.factoryCode != target_sr.factoryCode or paint_sr.factoryCode == 0:
+                if arcpy.Exists(reprojected_name):
+                    arcpy.management.Delete(reprojected_name)
+                arcpy.management.Project(paint_fc, reprojected_name, target_sr)
+                tmp_fcs.append(reprojected_name)
+                paint_fc = reprojected_name
+
+        shape_type = arcpy.Describe(paint_fc).shapeType
         if buffer_map_units and shape_type in ("Polyline", "Point", "Multipoint"):
             if arcpy.Exists(buf_name):
                 arcpy.management.Delete(buf_name)
@@ -299,7 +317,7 @@ def _prepare_paint_src(paint_fc: str, scratch: str, buffer_map_units: Optional[f
             tmp_fcs.append(buf_name)
             return buf_name, tmp_fcs
         elif buffer_map_units and shape_type == "Polygon":
-            # Width specified → paint the buffered boundary band, not the full interior.
+            # Width specified -> paint the buffered boundary band, not the full interior.
             # Extract polygon rings as lines, then buffer those lines.
             if arcpy.Exists(boundary_name):
                 arcpy.management.Delete(boundary_name)
@@ -388,7 +406,9 @@ def _rasterize_paint_layer(paint_fc: str, snap_raster: str, arr_shape: tuple,
     Chains _prepare_paint_src (buffering) with _rasterize_src (FeatureToRaster + mask
     conversion) and cleans up temp FCs on exit.
     """
-    src, tmp_fcs = _prepare_paint_src(paint_fc, scratch, buffer_map_units)
+    target_sr = arcpy.Describe(snap_raster).spatialReference
+    src, tmp_fcs = _prepare_paint_src(paint_fc, buffer_map_units,
+                                       target_sr=target_sr)
     try:
         return _rasterize_src(src, snap_raster, arr_shape, scratch)
     finally:
@@ -431,7 +451,7 @@ def _write_3mf(V0: np.ndarray, V1: np.ndarray, V2: np.ndarray, out_3mf: str,
     total_tris = len(V0)
 
     # Weld the per-triangle vertices into a shared, indexed vertex list.
-    # stacked = [ all v0 ; all v1 ; all v2 ]  →  triangle i uses rows i, N+i, 2N+i.
+    # stacked = [ all v0 ; all v1 ; all v2 ]  ->  triangle i uses rows i, N+i, 2N+i.
     stacked = np.concatenate([V0, V1, V2], axis=0)
     verts, inv = np.unique(stacked, axis=0, return_inverse=True)
     inv = inv.ravel()
@@ -611,9 +631,9 @@ class DEMToSTL(object):
 
     Coordinate system (model space, mm)
     ------------------------------------
-        X : 0 (west edge)  →  (nc-1) x cell_mm_w  (east edge)
-        Y : 0 (south edge) →  (nr-1) x cell_mm_h  (north edge)
-        Z : 0 (print plate) →  base_thick + terrain_relief  (terrain peaks)
+        X : 0 (west edge)  ->  (nc-1) x cell_mm_w  (east edge)
+        Y : 0 (south edge) ->  (nr-1) x cell_mm_h  (north edge)
+        Z : 0 (print plate) ->  base_thick + terrain_relief  (terrain peaks)
 
     Array orientation: row 0 = north (max Y), row nr-1 = south (Y=0).
     """
@@ -891,7 +911,7 @@ class DEMToSTL(object):
                 arr[nan_mask] = z_ref
 
         # z_to_xy normalises elevation values into XY map units before xy_scale
-        # converts map units → mm.  When Z and XY share the same unit, z_to_xy=1.
+        # converts map units -> mm.  When Z and XY share the same unit, z_to_xy=1.
         z_mm = (arr - z_ref) * z_to_xy * xy_scale * vert_exag + base_thick
 
         relief_mm      = float(np.nanmax(z_mm)) - base_thick
@@ -1835,7 +1855,7 @@ class DEMTo3MF(object):
                 arr[nan_mask] = z_ref
 
         # z_to_xy normalises elevation values into XY map units before xy_scale
-        # converts map units → mm.  When Z and XY share the same unit, z_to_xy=1.
+        # converts map units -> mm.  When Z and XY share the same unit, z_to_xy=1.
         z_mm = (arr - z_ref) * z_to_xy * xy_scale * vert_exag + base_thick
 
         relief_mm      = float(np.nanmax(z_mm)) - base_thick
@@ -2348,7 +2368,8 @@ class SplitDEMTo3MF(object):
                                 pass
                         tmp_filtered_fc = None
                         paint_src = layer_path
-                src_fc, tmp_fcs = _prepare_paint_src(paint_src, scratch, buf_units, suffix=f"_{i}")
+                src_fc, tmp_fcs = _prepare_paint_src(paint_src, buf_units,
+                                                     target_sr=sr, suffix=f"_{i}")
                 if tmp_filtered_fc:
                     tmp_fcs.append(tmp_filtered_fc)
                 prepared_srcs.append((src_fc, tmp_fcs, color_hex, display_width, layer_basename))
