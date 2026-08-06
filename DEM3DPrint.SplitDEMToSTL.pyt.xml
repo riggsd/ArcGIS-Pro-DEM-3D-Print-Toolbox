@@ -97,9 +97,9 @@
 				<dialogReference>
 					<para>Controls which elevation is mapped to the bottom of the terrain surface on each piece.</para>
 					<para><bulletList>
-						<bullet_item><b>Sea Level (0)</b> - Elevation 0 is the terrain floor for every piece. Because the datum reference is shared, pieces that cover adjacent areas will have consistent relative heights and can be physically arranged side-by-side to form a continuous landscape.</bullet_item>
-						<bullet_item><b>Minimum Elevation (per piece)</b> - Each piece's local minimum elevation is its own terrain floor. Pieces stand independently at full base thickness above their lowest terrain point but may differ in absolute model height. Use this when pieces are intended as separate standalone models rather than components of a matched set.</bullet_item>
-					</bulletList></para>
+							<bullet_item><b>Sea Level (0)</b> - Elevation 0 is the terrain floor for every piece. Because the datum reference is shared, pieces that cover adjacent areas will have consistent relative heights and can be physically arranged side-by-side to form a continuous landscape.</bullet_item>
+							<bullet_item><b>Minimum Elevation (per piece)</b> - Each piece's local minimum elevation is its own terrain floor. Pieces stand independently at full base thickness above their lowest terrain point but may differ in absolute model height. Use this when pieces are intended as separate standalone models rather than components of a matched set.</bullet_item>
+						</bulletList></para>
 				</dialogReference>
 				<pythonReference>
 					<para><code>"Sea Level (0)"</code> or <code>"Minimum Elevation (per piece)"</code>.</para>
@@ -109,9 +109,9 @@
 				<dialogReference>
 					<para>Controls how NoData cells at the boundary of each clipped piece are handled.</para>
 					<para><bulletList>
-						<bullet_item><b>Tight (Follows Polygon Boundary)</b> - NoData cells outside the polygon are left as void. Walls follow the actual polygon shape. Recommended for split mode because the polygon already defines the intended boundary.</bullet_item>
-						<bullet_item><b>Rectangular</b> - NoData cells are filled with the floor elevation. Each piece becomes a rectangular block aligned to the polygon's bounding box, which may overlap adjacent pieces.</bullet_item>
-					</bulletList></para>
+							<bullet_item><b>Tight (Follows Polygon Boundary)</b> - NoData cells outside the polygon are left as void. Walls follow the actual polygon shape. Recommended for split mode because the polygon already defines the intended boundary.</bullet_item>
+							<bullet_item><b>Rectangular</b> - NoData cells are filled with the floor elevation. Each piece becomes a rectangular block aligned to the polygon's bounding box, which may overlap adjacent pieces.</bullet_item>
+						</bulletList></para>
 				</dialogReference>
 				<pythonReference>
 					<para><code>"Tight (Follows Polygon Boundary)"</code> or <code>"Rectangular"</code>.</para>

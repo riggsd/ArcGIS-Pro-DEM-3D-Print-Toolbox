@@ -123,7 +123,7 @@ def _build_mesh(z_mm: np.ndarray, cell_mm_w: float, cell_mm_h: float) -> tuple[n
     )
 
     if not valid_cell.any():
-        raise RuntimeError("No valid terrain quads found. Check the input DEM for NoData coverage.")
+        raise RuntimeError("No DEM overlap.")
 
     all_v0, all_v1, all_v2 = [], [], []
     ii, jj = np.where(valid_cell)
@@ -1092,7 +1092,7 @@ class SplitDEMToSTL(object):
             direction="Input",
         )
         p10.filter.type = "ValueList"
-        p10.filter.list = ["Sea Level (0)", "Minimum Elevation (per piece)"]
+        p10.filter.list = ["Sea Level (0)", "Minimum Elevation (of DEM)", "Minimum Elevation (per piece)"]
         p10.value = "Sea Level (0)"
 
         # 11 - Model footprint
@@ -1210,6 +1210,11 @@ class SplitDEMToSTL(object):
             )
         else:
             messages.addMessage(f"  Elevation units : {elev_units} (matches XY units, no conversion)")
+
+        global_dem_min = None
+        if z_floor_mode == "Minimum Elevation (of DEM)":
+            global_dem_min = float(arcpy.management.GetRasterProperties(in_dem, "MINIMUM")[0])
+            messages.addMessage(f"  DEM minimum elevation : {global_dem_min:.2f} {elev_units.lower()} (global Z floor reference)")
 
         # ── Step 2/3 - Scan polygons, compute global scale ───────────────────
         messages.addMessage("Step 2/3 - Scanning split polygons for consistent scale...")
@@ -1354,7 +1359,12 @@ class SplitDEMToSTL(object):
                     # Z floor
                     nan_mask     = np.isnan(arr)
                     elev_min_raw = float(np.nanmin(arr))
-                    z_ref        = min(elev_min_raw, 0.0) if z_floor_mode == "Sea Level (0)" else elev_min_raw
+                    if z_floor_mode == "Sea Level (0)":
+                        z_ref = min(elev_min_raw, 0.0)
+                    elif z_floor_mode == "Minimum Elevation (of DEM)":
+                        z_ref = global_dem_min
+                    else:
+                        z_ref = elev_min_raw
 
                     if not tight:
                         arr[nan_mask] = z_ref
@@ -2042,7 +2052,7 @@ class SplitDEMTo3MF(object):
             direction="Input",
         )
         p10.filter.type = "ValueList"
-        p10.filter.list = ["Sea Level (0)", "Minimum Elevation (per piece)"]
+        p10.filter.list = ["Sea Level (0)", "Minimum Elevation (of DEM)", "Minimum Elevation (per piece)"]
         p10.value = "Sea Level (0)"
 
         # 11 - Model footprint
@@ -2207,6 +2217,11 @@ class SplitDEMTo3MF(object):
             )
         else:
             messages.addMessage(f"  Elevation units : {elev_units} (matches XY units, no conversion)")
+
+        global_dem_min = None
+        if z_floor_mode == "Minimum Elevation (of DEM)":
+            global_dem_min = float(arcpy.management.GetRasterProperties(in_dem, "MINIMUM")[0])
+            messages.addMessage(f"  DEM minimum elevation : {global_dem_min:.2f} {elev_units.lower()} (global Z floor reference)")
 
         # ── Step 2/3 - Scan polygons, compute global scale ───────────────────
         messages.addMessage("Step 2/3 - Scanning split polygons for consistent scale...")
@@ -2435,7 +2450,12 @@ class SplitDEMTo3MF(object):
 
                     nan_mask     = np.isnan(arr)
                     elev_min_raw = float(np.nanmin(arr))
-                    z_ref        = min(elev_min_raw, 0.0) if z_floor_mode == "Sea Level (0)" else elev_min_raw
+                    if z_floor_mode == "Sea Level (0)":
+                        z_ref = min(elev_min_raw, 0.0)
+                    elif z_floor_mode == "Minimum Elevation (of DEM)":
+                        z_ref = global_dem_min
+                    else:
+                        z_ref = elev_min_raw
 
                     if not tight:
                         arr[nan_mask] = z_ref
